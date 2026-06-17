@@ -1,0 +1,472 @@
+# 这是一份完整字段参考配置，不是自包含可直接运行的算例。
+# 使用前请至少替换 initial、final、active_atoms/frozen_atoms，以及 MLFF calculator 的 model/head/device 等字段。
+# 如果只想先看命令是否可用，可以用 neb-helper make --write-template 生成更短的最小模板。
+# neb-helper make 配置示例
+#
+# 运行方式：
+#   neb-helper make examples\make\nebmake_v2_example.yaml
+#
+# 重要约定：
+#   1. 原子编号全部使用 Python/ASE 风格的 0-based index。
+#      第 1 个原子写 0，第 2 个原子写 1，以此类推。
+#   2. initial 和 final 必须有相同的原子数、元素顺序、cell 和 PBC。
+#      如果只是不小心原子顺序不同，可以启用 endpoint_reorder 先自动校正。
+#   3. v2 默认保持旧版输出行为：内部尽量保持路径连续，写出时也不主动 wrap 回 box。
+#      如果希望写给 CP2K 前强制收回 box，请把 pbc.output_wrap 改为 true。
+#   4. 如果使用 YAML 配置，当前 Python 环境需要安装 PyYAML；不想装 PyYAML 时也可以改写成 JSON。
+
+# 初态结构文件。ASE 能读取的格式通常都可以，例如 cif、xyz、POSCAR、traj 等。
+initial: 1GaOH_and_H2O-1.cif
+
+# 末态结构文件。必须和 initial 原子顺序完全一致。
+final: 1GaOHH2O-1.cif
+
+# 端点原子顺序自动校正。
+# 如果 final 已经是重排后的文件，可以改回 enabled: false。
+# 需要主程序直接读取原始末态并自动重排时，再把 enabled 改成 true。
+endpoint_reorder:
+  # 是否启用端点原子顺序自动校正。
+  # true：先按几何匹配重排端点，再继续生成 NEB 路径；
+  # false：完全跳过重排，要求 initial/final 本来就已经顺序一致。
+  # 注意必须写 false，不能写成 flase；拼错时程序会直接报错。
+  enabled: false
+
+  # 重排方向。
+  # final_by_initial：以 initial 的原子顺序为基准，重排 final，最常用；
+  # initial_by_final：以 final 的原子顺序为基准，重排 initial。
+  mode: final_by_initial
+
+  # 重排后的端点结构额外保存到哪里。
+  # 留空则只在内存中使用重排结果，不额外写结构文件。
+  # 当前写到 v2_output，方便和 image_*.xyz、diagnostics.csv 等输出放在一起。
+  output: v2_output/1GaOH-1_reordered_by_GaO_and_HBAS.cif
+
+  # 原子匹配映射表输出位置。
+  # CSV 内容为 reference_index,target_index,symbol,distance_A，
+  # 可用于检查哪些原子被匹配到一起，以及是否存在距离异常大的匹配。
+  mapping: v2_output/1GaOH-1_reordered_by_GaO_and_HBAS_mapping.csv
+
+  # 是否把参考端点的 cell/PBC 复制给重排后的目标端点。
+  # fixed-cell NEB 建议保持 true，避免 CIF cell 微小差异导致端点检查失败。
+  copy_reference_cell: true
+
+  # 匹配距离安全阈值，单位 Angstrom。
+  # 例如写 1.0 时，只要任意同元素匹配距离超过 1.0 A 就直接报错。
+  # 留空表示不设阈值，只在屏幕输出最大/RMS 匹配距离供人工判断。
+  max_distance:
+
+  # ASE 写出格式。
+  # 留空时由 output 文件后缀自动判断；通常保持空即可。
+  output_format:
+
+# 中间 image 数量，不包含初态和末态。
+# 例如 n_images: 10 会输出 image_000 到 image_011，一共 12 个结构。
+n_images: 5
+
+# 原子编号基准。
+# false：默认，保持 Python/ASE 的 0-based index。列表 [10, 12, 13] 就是第 11、13、14 个原子。
+# true：按 GaussView 等图形界面的 1-based index 解释。
+#       这时 [11, 13, 14] 或 "11,13,14,49-50" 都会自动减 1 存成内部 0-based。
+atom_indices_1_based: false
+
+# 反应中心原子。
+# 这里会遵守 atom_indices_1_based：
+# - atom_indices_1_based: false 时，active_atoms: [10, 12, 13] 表示 0-based 编号；
+# - atom_indices_1_based: true 时，可以直接粘贴 GaussView 字符串，例如：
+#   active_atoms: "1-15,17,21-115,118-119"
+# 用途：
+#   - waypoint 模式下，默认只让这些原子跟随手摆中间结构。
+#   - relax.freeze_active: true 时，预优化阶段会固定这些原子，让环境/骨架自己响应。
+# 示例：active_atoms: [10, 12, 13, 48]
+active_atoms: []
+
+# 永久冻结原子。
+# 这里同样遵守 atom_indices_1_based；如果设为 true，可写 frozen_atoms: "1-15,21-115"。
+# 常用于 slab 底层、分子筛远离反应中心的骨架层，或你不希望预优化移动的原子。
+# 示例：frozen_atoms: [0, 1, 2, 3, 4]
+frozen_atoms: []
+
+background:
+  # 背景路径生成方法。
+  # 当前 v2 支持 mic_linear：用最小镜像位移做笛卡尔插值。
+  method: mic_linear
+
+  # 是否先在背景路径上跑 ASE IDPP 插值。
+  # 注意：waypoint/torsion 控制会在 IDPP 之后覆盖反应中心。
+  idpp: true
+
+# 手摆中间结构控制点。
+# 设计意图：你只需要手摆关键原子，不必手摆整个 slab/分子筛骨架。
+#
+# active_atoms_only: true：
+#   - 默认模式。
+#   - waypoint 文件可以只包含 active_atoms 这些原子，顺序要和 active_atoms 列表一致；
+#   - 也可以提供完整结构，脚本会按 active_atoms 索引抽取关键原子坐标；
+#   - 其他原子仍使用背景路径，再通过 relax 让骨架自己响应。
+#
+# active_atoms_only: false：
+#   - 把 waypoint 当成完整结构控制点，会覆盖所有原子的分段插值；
+#   - 适合你确实已经准备好了完整可信的中间结构。
+#
+# image 和 fraction 二选一：
+#   - image: 5 表示这个 waypoint 对应 image_005；
+#   - fraction: 0.5 表示放在路径中点附近；
+#   - 两者都不写时，多个 waypoint 会均匀分布。
+
+waypoints: []  # 这是不启动
+#waypoints:
+#   - file: image_001.xyz
+#     image: 1
+#     active_atoms_only: true
+#   - file: image_002.xyz
+#     image: 2
+#     active_atoms_only: true
+#   - file: image_003.xyz
+#     image: 3
+#     active_atoms_only: true
+#   - file: image_004.xyz
+#     image: 4
+#     active_atoms_only: true
+#   - file: image_005.xyz
+#     image: 5
+#     active_atoms_only: true
+
+# 示例 1：只用手摆结构控制 active_atoms。
+# waypoints:
+#   - file: mid_active_atoms.xyz
+#     fraction: 0.5
+#     active_atoms_only: true
+#
+# 示例 2：指定 waypoint 对应哪张 image。
+# waypoints:
+#   - file: mid_1.xyz
+#     image: 4
+#     active_atoms_only: true
+#   - file: mid_2.xyz
+#     image: 8
+#     active_atoms_only: true
+#
+# 示例 3：不用全局 active_atoms，而是为 waypoint 指定一组原子。
+# 注意：当前第一版要求所有 waypoint 使用同一组 atoms。
+# waypoints:
+#   - file: mid_subset.xyz
+#     fraction: 0.5
+#     atoms: [10, 12, 13, 48]
+#     active_atoms_only: true
+
+# 单键旋转/二面角控制。
+# 这是给“单键旋转过渡态”准备的模式，比普通笛卡尔插值更合理。
+#
+# dihedral: [i, j, k, l]
+#   ASE 的二面角定义，j-k 通常就是旋转键。
+#
+# rotating_group:
+#   要跟着旋转的 fragment 原子列表。通常是键一侧的所有原子，必须包含 dihedral 的第 4 个原子 l。
+#   不要把键另一侧或固定骨架误放进去，否则会转错一大片结构。
+#
+# start_deg/end_deg:
+#   指定起止二面角；不写时从初末态结构自动读取。
+#
+# values_deg:
+#   如果你想完全手动指定每张 image 的二面角，可以用 values_deg。
+#   长度可以是 n_images + 2（包含端点），也可以是 n_images（只给中间点）。
+#
+# apply_endpoints:
+#   false 表示不改动初末态，只改中间 image；通常建议保持 false。
+torsions: []
+# 示例：绕 12-13 单键旋转 48/49 这一侧的 fragment。
+# torsions:
+#   - name: rotate_fragment
+#     dihedral: [10, 12, 13, 48]
+#     rotating_group: [48, 49]
+#     start_deg: 30.0
+#     end_deg: 170.0
+#     apply_endpoints: false
+
+relax:
+  # 是否对中间 image 做短程预优化。
+  # 这是让 slab/分子筛骨架跟随反应中心变化的关键步骤。
+  enabled: false
+
+  calculator:
+    # 计算器类型。
+    # 可选：none / dp / deepmd / mace / emt / lj
+    # - dp 或 deepmd：DeepMD calculator，需要 deepmd 环境。
+    # - mace：MACE calculator，需要 mace-torch 环境。
+    # - emt/lj：ASE 内置，主要用于测试，不适合真实反应路径。
+    type: none
+
+    # 模型路径。
+    # DP 示例：DPA3/DPA3_finetune_zeo_iter011_reico_SiAlGaCHO_abacus_01.pth
+    # MACE 示例：path/to/mace.model
+    # MACE foundation model 示例：mace_mp 或 mace_mp:medium
+    model:
+
+    # DP 或 MACE 多 head 模型可在这里指定 head。
+    # DP 示例：Omat24；MACE 示例：zeo_reico_head。
+    head:
+
+    # MACE 常用字段，例如 cuda 或 cpu。DP 通常由其自身环境决定。
+    device:
+
+    # MACE 常用字段，例如 float64 或 float32。
+    dtype:
+
+    # 传给底层 calculator 的额外关键字参数。
+    # 例如：kwargs: {dispersion: true}
+    kwargs: {}
+
+  # 每张中间 image 的最大优化步数。
+  steps: 100
+
+  # 预优化收敛阈值，单位取决于 ASE calculator，通常是 eV/A。
+  fmax: 0.1
+
+  # ASE optimizer 的最大单步位移。
+  maxstep: 0.05
+
+  # 优化器。当前支持 BFGS 和 FIRE。
+  optimizer: BFGS
+
+  # 是否也优化初末态。通常保持 false，避免改变你已经优化好的 endpoint。
+  relax_endpoints: false
+
+  # true：预优化时固定 active_atoms 和 torsion 相关原子，只让环境/骨架响应。
+  # false：反应中心也允许被 MLFF 拉动，可能偏离你手摆/二面角控制的路径。
+  freeze_active: true
+
+  # 预优化日志文件。留空表示不写日志；写 relax.log 会生成 relax_001.log 等。
+  logfile:
+
+  # 预优化轨迹文件。留空表示不写轨迹；写 relax.traj 会生成 relax_001.traj 等。
+  trajectory:
+
+  # 是否把 ASE optimizer 的 Step/Time/Energy/fmax 表格输出到屏幕。
+  # true：推荐。运行时可以看到每张 image 优化到第几步、能量和最大力。
+  # false：只写 logfile，不在屏幕上刷表格。
+  log_to_screen: true
+
+neb_relax:
+  # 是否在初猜路径创建完成后，对整条 NEB band 做 MLFF-NEB 优化。
+  # 这和上面的 relax 不同：
+  # - relax 是逐张 image 独立预优化，适合让骨架先局部响应；
+  # - neb_relax 是真正把所有中间 image 作为一条 band，用 NEB spring 和切向投影一起优化。
+  enabled: false
+
+  calculator:
+    # 可选：dp / deepmd / mace / emt / lj。
+    # 真实体系建议用你信任的 DP 或 MACE；emt/lj 只适合测试代码流程。
+    type: mace
+
+    # DP/MACE 模型路径或 MACE foundation model 名称。
+    model: 'MACE/multihead_lora_replay_finetune.model'
+
+    # DP 或 MACE 多 head 模型可指定 head。
+    # DP 示例：Omat24；MACE 示例：zeo_reico_head。
+    head: zeo_reico_head
+
+    # MACE 常用字段，例如 cuda 或 cpu。
+    device: cuda
+
+    # MACE 常用字段，例如 float64 或 float32。
+    dtype: float32
+
+    # 传给底层 calculator 的额外关键字参数。
+    # 例如 MACE 的 cuequivariance 加速如果你的环境已经安装，可写：{enable_cueq: true}
+    kwargs: {}
+
+  # NEB 取力方式。
+  # ase：最稳妥的默认方式，ASE 按 image 逐张调用 calculator；兼容所有 calculator，但 MLFF 大体系会偏慢。
+  # auto：如果 calculator 是 MACE 或 DP/DeepMD，就自动尝试批量评估整条 band；不支持时回退到 ase。
+  # batch：强制使用批量评估；如果当前 calculator 没有实现批量接口，会直接报错，适合确认自己正在跑快速路径。
+  # 对大多数 MACE/DP 的 MLFF-NEB，建议先用 auto；如果屏幕显示 force_evaluator=mace-batch 或 deepmd-batch，说明已启用批量路径。
+  force_evaluator: auto
+
+  # 批量取力时每次送进 MLFF 的 image 数量，只对 force_evaluator: auto/batch 生效。
+  # 留空或设为 0：整条 band 一次性评估，GPU 利用率最高，但最容易爆显存。
+  # 2 或 3：通常是更实用的折中，显存压力小很多，同时仍比 ASE 逐张 image 调用更少 CPU/GPU 往返。
+  # 1：最低显存模式，速度更接近旧方法，但仍使用同一个批量 evaluator 接口。
+  force_batch_size: 2
+
+  # 整条 NEB band 的最大优化步数。
+  steps: 200
+
+  # NEB 优化收敛阈值，通常是 eV/A。
+  fmax: 0.5
+
+  # ASE optimizer 的最大单步位移。
+  maxstep: 0.05
+
+  # 优化器。当前支持 BFGS 和 FIRE。
+  optimizer: BFGS
+
+  # 是否使用 climbing image。做初猜平滑时通常先保持 false；需要进一步找鞍点时再打开。
+  climb: true
+
+  # ASE NEB method，默认 improvedtangent。一般不需要改；若严格需要旧行为，可改成 aseneb。
+  method: improvedtangent
+
+  # NEB spring 常数。
+  k: 0.1
+
+  # 是否使用 ASE NEB parallel。单机普通使用建议 false。
+  parallel: false
+
+  # 分子体系有时可去除整体平移/转动；slab/分子筛一般保持 false。
+  remove_rotation_and_translation: false
+
+  # 是否让所有 image 共享同一个 calculator。
+  # auto：默认。MACE/DP 这类大模型自动共享，避免每张 image 重复加载一份模型。
+  # true：强制共享 calculator。
+  # false：每张 image 一个 calculator，通常更慢且更占内存，只建议在共享模式不兼容时使用。
+  shared_calculator: auto
+
+  # false：默认，不冻结 active_atoms，让 MLFF-NEB 真正优化反应中心路径。
+  # true：固定 active_atoms 和 torsion 相关原子，只优化环境/骨架和弹簧平滑。
+  freeze_active: false
+
+  # NEB 优化日志/轨迹，写在 output.directory 目录下。留空可以不写。
+  logfile: neb_relax.log
+  trajectory: neb_relax.traj
+
+  # 是否把 ASE optimizer 的默认表格同步输出到屏幕。
+  # true：屏幕会显示类似 BFGS: 10 16:30:12 -4556.184082 0.789422 的进度行，
+  #       同时仍然写 neb_relax.log。
+  # false：只写 neb_relax.log，不在屏幕上显示 optimizer 表格。
+  log_to_screen: true
+
+  # CP2K .ener 风格的能量记录，写在 output.directory 目录下。
+  # 每行格式：step + 每张 image 的能量 + 相邻 image 的 RMS MIC 距离。
+  # 注意：MLFF 的能量单位通常是 ASE calculator 返回的 eV，不是 CP2K 的 Hartree。
+  energy_log: neb_relax.ener
+
+  # 是否额外为每个 image 输出 NEB 优化过程的多帧 xyz 轨迹。
+  # 例如 image_000_neb_traj.xyz 会记录 image_000 在每个 NEB 优化步的结构。
+  write_image_trajectories: true
+
+  # 每个 image 轨迹文件名后缀。
+  image_trajectory_suffix: _neb_traj.xyz
+
+  # 轨迹格式。extxyz 会保留 cell/PBC 信息，很多可视化软件也能直接打开。
+  # 如果你只想要普通 xyz，可以改成 xyz。
+  image_trajectory_format: xyz
+
+  # 是否在 NEB 优化过程中每隔若干步覆盖写出“当前可直接使用”的输出文件。
+  # true：每隔 current_output_interval 步更新 output.directory 里的 image_000.xyz、image_001.xyz、
+  #       neb_initial_path.xyz、band.txt 等文件。这样你可以边跑边打开当前结构，
+  #       觉得路径已经够好时直接停止计算并拿当前文件去跑 DFT。
+  # false：默认，只在 NEB 完成后写最终文件；磁盘写入更少。
+  write_current_outputs: true
+
+  # live output 的步长。1 表示每一步都覆盖写一次；5 表示每 5 步写一次。
+  current_output_interval: 1
+
+dimer_vector:
+  # 是否根据最终写出的 NEB 路径额外生成 CP2K 的 &DIMER_VECTOR 字段。
+  # 这个功能是可选的；如果你只想要 NEB 初猜，可以改成 false。
+  enabled: true
+
+  # 输出文件名。相对路径会写到 output.directory 下；当前会生成 v2_output/dimer_vector.inc。
+  # 文件内容是一个完整的 &DIMER_VECTOR ... &END DIMER_VECTOR 片段，
+  # 使用时把它放到 CP2K 的 &MOTION / &GEO_OPT / &TRANSITION_STATE / &DIMER 里面。
+  file: dimer_vector.inc
+
+  # 用哪张 image 作为 TS/DIMER 初始结构来取方向。
+  # auto：如果 neb_relax.energy_log 存在，就选最后一步能量最高的“内部 image”；
+  #       如果没有可用能量日志，就退回路径中间 image。
+  # middle：强制选中间 image。
+  # max_energy：强制从 neb_relax.energy_log 选最高内部 image；没有日志时直接报错。
+  # 也可以写 0-based image 编号，例如 image: 4。注意不能选 0 或最后一张端点。
+  image: auto
+
+  # 哪些原子的 tangent 分量写入 DIMER_VECTOR。
+  # active：默认。若 active_atoms 非空，只保留 active_atoms；若 active_atoms 为空，则退回 all。
+  # all：保留所有原子的 NEB tangent。
+  # 也可以直接写列表，例如 atoms: [10, 12, 13, 48, 49]。
+  # 如果 atom_indices_1_based: true，也可以粘贴 GaussView 字符串，例如 atoms: "11,13,14,49-50"。
+  # 对 slab/分子筛体系，建议把真正参与反应的吸附物、活性位点、第一层响应骨架放进来，
+  # 远处骨架不放，避免 DIMER 被无关软模带跑。
+  atoms: active
+
+  # true：即使 atoms 里包含 frozen_atoms，也把 frozen_atoms 的方向分量设为 0。
+  zero_frozen_atoms: true
+
+  # true：把整个向量归一化，只保留方向。CP2K DIMER 更关心方向而不是绝对长度。
+  normalize: true
+
+  # 归一化之后再乘的比例；通常保持 1.0。
+  scale: 1.0
+
+pbc:
+  # 内部 wrap 策略。
+  # never：默认。内部生成/优化不主动 wrap，尽量保持连续路径。
+  # always：每个阶段都 wrap，最保守，但可能把跨边界的分子/片段切开。
+  wrap_policy: never
+
+  # 是否在写 CP2K 输出文件前把坐标强制收回 box。
+  # false：默认，保持旧版行为，输出坐标允许超过主晶胞长度。
+  # true：写 image_*.xyz 和 neb_initial_path.xyz 前自动 wrap 到 [0, 1)。
+  output_wrap: false
+
+  # true：如果输出前/输出 wrap 后仍检测到原子在 box 外，就直接报错。
+  # false：不因为 box 外坐标中断。
+  fail_if_outside: false
+
+  # wrap 时把 fractional coordinate 限制在 [0, 1-eps]，避免刚好等于 1.0。
+  eps: 1.0e-12
+
+  # 判断是否越界的容差。
+  tol: 1.0e-8
+
+output:
+  # 输出目录。建议不要用当前目录，避免覆盖旧的 image_*.xyz/band.txt。
+  directory: v2_output
+
+  # 单张结构文件名前缀。实际输出为 image_000.xyz、image_001.xyz 等。
+  images_prefix: image
+
+  # 多帧 xyz 轨迹文件名。留空可以不写。
+  trajectory: neb_initial_path.xyz
+
+  # CP2K BAND 中 &REPLICA 字段片段。留空可以不写。
+  cp2k_band: band.txt
+
+  # 诊断表：包含每张 image 的 fractional 坐标范围、是否越界、相邻 image 最大 MIC 跳跃。
+  diagnostics: diagnostics.csv
+
+  # 是否同时输出 VASP POSCAR 目录 00/POSCAR, 01/POSCAR ...
+  write_vasp: false
+
+  # 如果启用了 relax 或 neb_relax，是否额外保留“优化前”的初猜路径。
+  # true：默认。初猜会写到 output.directory/initial_guess_directory 下。
+  # false：只保留最终路径。
+  save_initial_guess: true
+
+  # 优化前初猜路径的子目录名，也可以写绝对路径。
+  # 例如当前配置会写到 v2_output/initial_guess/。
+  initial_guess_directory: initial_guess
+
+# 一个比较典型的真实用法可以长这样：
+#
+# active_atoms: [10, 12, 13, 48, 49]
+# frozen_atoms: [0, 1, 2, 3, 4]
+# torsions:
+#   - name: rotate_oh
+#     dihedral: [10, 12, 13, 48]
+#     rotating_group: [48, 49]
+#     start_deg: 30.0
+#     end_deg: 170.0
+# relax:
+#   enabled: true
+#   calculator:
+#     type: mace
+#     model: path/to/mace.model
+#     device: cuda
+#     dtype: float64
+#     kwargs: {}
+#   steps: 100
+#   fmax: 0.2
+#   maxstep: 0.05
+#   optimizer: BFGS
+#   relax_endpoints: false
+#   freeze_active: true

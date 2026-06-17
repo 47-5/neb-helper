@@ -75,6 +75,8 @@ Write a starter config:
 neb-helper make --write-template nebmake.yaml
 ```
 
+A more complete field-by-field reference config is available at `examples/make/nebmake_v2_example.yaml`.
+
 ## Analyze a NEB Result
 
 Analyze a CP2K `.ener` result directory and write a plot plus `result.txt`:

@@ -93,6 +93,14 @@ examples/python_api/make_from_config.py
 neb-helper make --write-template nebmake.yaml
 ```
 
+如果想看完整字段示例，可以参考：
+
+```text
+examples/make/nebmake_v2_example.yaml
+```
+
+这份文件来自旧 `nebmake`，适合当作配置字典和注释参考；它不是自包含算例，运行前要替换 `initial`、`final`、原子编号和模型路径。
+
 最小配置大概长这样：
 
 ```yaml

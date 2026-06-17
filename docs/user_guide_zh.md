@@ -166,7 +166,15 @@ neb-helper make config.yaml
 
 ```powershell
 neb-helper make --write-template nebmake.yaml
+
+
+完整字段参考配置：
+
+```text
+examples/make/nebmake_v2_example.yaml
 ```
+
+这份 YAML 从旧 `nebmake` 迁移而来，保留了大量注释，适合查字段含义和真实配置形态。它引用的是示例结构名和模型路径，不是自包含可直接运行的算例。
 
 一个最小配置：
 
