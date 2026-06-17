@@ -7,12 +7,13 @@
 `neb-helper` 现在分成两层：
 
 - `make`：从 `initial` / `final` 两个端点出发，构造 NEB 初猜。它基本继承原来的 `nebmake_v2`。
-- `result`：读取已经跑出来的 NEB 结果，再根据已有路径做后处理。目前已经实现 `dimer` 和 `slice`。
+- `result`：读取已经跑出来的 NEB 结果，再根据已有路径做后处理。目前已经实现 `analyze`、`dimer` 和 `slice`。
 
 也就是说：
 
 ```text
 从端点造路径：neb-helper make
+从已有结果汇总能垒：neb-helper analyze
 从已有路径派生下一步：neb-helper dimer / slice
 ```
 
@@ -40,6 +41,7 @@ neb-helper --help
 
 ```powershell
 neb-helper make config.yaml
+neb-helper analyze D:\code\nebresult\example1
 neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5
 neb-helper slice --source D:\code\nebresult --range 0 3
 ```
@@ -101,7 +103,64 @@ v2_output\diagnostics.csv
 
 `band.txt` 是 CP2K `&BAND` 里可用的 `&REPLICA` 片段。你仍然需要把它放进自己的 CP2K 输入文件框架里。
 
-## 5. dimer：从已有 image pair 生成 DIMER 初猜
+## 5. analyze：分析已有 NEB 结果
+
+`analyze` 是从旧 `nebresult.py` 迁移来的通用结果分析命令。它负责读已有 NEB 结果、画能量曲线、写 summary，不做化学反应类型的自动判断。
+
+最常用方式是给一个结果目录：
+
+```powershell
+neb-helper analyze D:\code\nebresult\example1
+```
+
+如果目录里有 `.ener` 文件，它会优先按 CP2K `.ener` 读取。默认输出：
+
+```text
+D:\code\nebresult\example1\neb_result.png
+D:\code\nebresult\example1\result.txt
+```
+
+`result.txt` 会包含：
+
+```text
+forward_barrier_eV
+reverse_barrier_eV
+reaction_energy_eV
+peak_image_index
+每张 image 的 path_A 和 energy_eV
+```
+
+也可以显式指定文件：
+
+```powershell
+neb-helper analyze --energy-file D:\calc\neb-r-0-1.ener
+neb-helper analyze --energy-file D:\calc\neb-r-0-1.ener --restart-file D:\calc\neb.restart
+neb-helper analyze --traj-file D:\calc\neb_relax.traj --images-per-band 7
+```
+
+如果只想写到临时目录，避免覆盖原结果：
+
+```powershell
+neb-helper analyze D:\code\nebresult\example1 --output-image D:\tmp\neb_result.png --summary D:\tmp\result.txt
+```
+
+常用选项：
+
+```text
+--energy-file PATH         显式指定 CP2K .ener
+--restart-file PATH        显式指定 CP2K .restart，用于读取结构
+--traj-file PATH           显式指定 ASE .traj
+--image-count N            .ener 无法自动推断 image 数时手动指定
+--line-index N             读取 .ener 第几行，默认 -1 表示最后一行
+--energy-unit hartree|ev   输入能量单位，CP2K .ener 通常是 hartree
+--absolute-energy          不把能量平移到 image 0
+--no-smooth                不平滑曲线
+--output-image PATH        图像输出路径
+--summary PATH             summary 输出路径
+--write-xyz                有结构时额外写 neb_traj.xyz
+```
+
+## 6. dimer：从已有 image pair 生成 DIMER 初猜
 
 当你已经有一条 NEB 路径，并判断鞍点大概在两张 image 之间，可以用 `dimer` 生成：
 
@@ -161,12 +220,6 @@ neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5 --activ
 --atom-indices-1-based
 ```
 
-例如：
-
-```powershell
-neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5 --atom-indices-1-based --active-atoms "11,13,14,49" --atoms active
-```
-
 ### dimer 常用选项
 
 ```text
@@ -180,7 +233,7 @@ neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5 --atom-
 --output-dir PATH          指定输出目录
 ```
 
-## 6. slice：裁剪已有 NEB 路径
+## 7. slice：裁剪已有 NEB 路径
 
 如果一条 NEB 里只有某一段是你真正关心的反应过程，可以把这一段裁出来，重新编号，生成新的 CP2K-ready band。
 
@@ -228,20 +281,7 @@ image_000.xyz ... image_008.xyz
 neb-helper slice --source D:\code\nebresult --range 3 0
 ```
 
-### slice 常用选项
-
-```text
---source PATH              已有 NEB image 所在目录
---range START END          inclusive 的 0-based image 范围
---resample-n-images N      重采样后的中间 image 数量
---output-dir PATH          指定输出目录
---output-prefix image      输出 image 文件名前缀
---trajectory NAME          多帧 xyz 文件名；空字符串表示不写
---band-file NAME           CP2K band 片段文件名；空字符串表示不写
---source-map NAME          来源映射 CSV 文件名；空字符串表示不写
-```
-
-## 7. 当前质子转移案例的推荐用法
+## 8. 当前质子转移案例的推荐用法
 
 你的当前判断是：
 
@@ -250,7 +290,13 @@ image_000 - image_003：感兴趣的质子转移过程
 image_003 之后：大概率是质子转移后的构象变化
 ```
 
-可以分两条路线推进。
+先用 `analyze` 保存一份通用能量汇总：
+
+```powershell
+neb-helper analyze D:\code\nebresult
+```
+
+然后可以分两条路线推进。
 
 ### 路线 A：改用 DIMER
 
@@ -285,7 +331,7 @@ neb-helper slice --source D:\code\nebresult --range 0 3 --resample-n-images 7
 
 这里要注意：`image_003` 是否能直接当新 product 端点，需要你后续用几何优化和频率确认。`neb-helper slice` 只负责生成候选路径，不替你判断它是不是稳定极小点。
 
-## 8. 文件命名约定
+## 9. 文件命名约定
 
 默认输入 image 文件名：
 
@@ -302,7 +348,7 @@ neb-helper slice --source D:\code\nebresult --prefix replica --suffix xyz --rang
 neb-helper dimer --source D:\code\nebresult --prefix replica --suffix xyz --between 1 2
 ```
 
-## 9. 常见问题
+## 10. 常见问题
 
 ### 找不到 image 文件
 
@@ -330,15 +376,21 @@ neb-helper dimer --source D:\code\nebresult --prefix replica --suffix xyz --betw
 --atom-indices-1-based
 ```
 
-## 10. 现在还不建议自动化的部分
+## 11. 现在还不建议自动化的部分
 
-暂时不把 `analyze` 和 `endpoint` 做成正式命令。原因是这些判断目前仍然比较 case by case：例如哪些键长/CV 能代表反应、哪些构象变化应视为无关松弛、`image_003` 是否可以作为新端点，都需要结合具体体系判断。
-
-更稳妥的做法是先使用当前的两个后处理工具：
+`analyze` 目前已经迁移了通用能量曲线和 summary。仍然暂缓的是更强的化学诊断层，例如：
 
 ```text
-dimer：从可疑 TS 区间生成 DIMER 初猜
-slice：裁剪出真正关心的路径段
+自动识别质子转移 CV
+自动判断哪些键长需要画出来
+自动区分反应坐标变化和构象松弛
+自动从某张 image 生成 endpoint candidate 并判定它是否该作为新端点
 ```
 
-等积累几个不同体系的使用模式后，再把通用诊断项沉淀成 `analyze`。
+这些判断目前仍然比较 case by case。更稳妥的做法是先用当前工具把人工判断后的步骤做扎实：
+
+```text
+analyze：整理能量、路径长度、峰值 image
+slice：裁剪出真正关心的路径段
+dimer：从可疑 TS 区间生成 DIMER 初猜
+```

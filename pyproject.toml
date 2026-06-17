@@ -15,6 +15,7 @@ authors = [
 dependencies = [
   "ase>=3.22",
   "numpy>=1.23",
+  "matplotlib>=3.5",
   "PyYAML>=6.0",
 ]
 

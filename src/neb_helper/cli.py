@@ -7,7 +7,7 @@ from typing import Sequence
 from . import __version__
 
 
-_COMMANDS = {"make", "dimer", "slice"}
+_COMMANDS = {"make", "analyze", "dimer", "slice"}
 _TOP_LEVEL_OPTIONS = {"-h", "--help", "--version"}
 
 
@@ -26,6 +26,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .make.cli import main as make_main
 
         return make_main(remaining)
+
+    if namespace.command == "analyze":
+        from .result.analyze import main as analyze_main
+
+        return analyze_main(remaining)
 
     if namespace.command == "dimer":
         from .result.dimer_guess import main as dimer_main
@@ -65,6 +70,11 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "make",
         help="Build a CP2K-oriented NEB path from an initial/final structure config.",
+        add_help=False,
+    )
+    subparsers.add_parser(
+        "analyze",
+        help="Analyze NEB result files and plot an energy profile.",
         add_help=False,
     )
     subparsers.add_parser(

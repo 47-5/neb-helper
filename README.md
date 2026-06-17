@@ -52,6 +52,28 @@ Write a starter config:
 neb-helper make --write-template nebmake.yaml
 ```
 
+## Analyze a NEB Result
+
+Analyze a CP2K `.ener` result directory and write a plot plus `result.txt`:
+
+```powershell
+neb-helper analyze D:\code\nebresult\example1
+```
+
+Typical outputs:
+
+```text
+D:\code\nebresult\example1\neb_result.png
+D:\code\nebresult\example1\result.txt
+```
+
+The analyzer can also read explicit CP2K `.ener` / `.restart` files or ASE `.traj` files:
+
+```powershell
+neb-helper analyze --energy-file D:\calc\neb-r-0-1.ener --restart-file D:\calc\neb.restart
+neb-helper analyze --traj-file D:\calc\neb_relax.traj --images-per-band 7
+```
+
 ## Generate a DIMER Guess
 
 Generate a TS guess halfway between two existing NEB images and write a CP2K `&DIMER_VECTOR` block:
@@ -148,5 +170,5 @@ src/neb_helper/
 
 ## Planned Result Workflows
 
-- `analyze`: summarize energy profiles, image spacing, key bond distances, and reaction CVs.
-- `endpoint`: stage endpoint candidates from selected images for geometry optimization and frequency checks.
+- Higher-level `analyze` diagnostics for selected bond distances, proton-transfer CVs, and conformational-change flags once the generic cases are clearer.
+- `endpoint`: stage endpoint candidates from selected images for geometry optimization and frequency checks after the workflow is better justified across cases.

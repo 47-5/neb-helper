@@ -4,7 +4,7 @@
 
 ## 1. 总体结构
 
-`neb-helper` 是一个 NEB 工作流工具箱，当前主要有三类命令：
+`neb-helper` 是一个 NEB 工作流工具箱，当前主要有四类命令：
 
 ```powershell
 neb-helper make   # 从 initial/final 构造 NEB 初猜，可选 MLFF 预优化和 MLFF-NEB
@@ -751,7 +751,124 @@ output:
 neb-helper make config.yaml
 ```
 
-## 5. dimer 命令：从已有路径派生 DIMER 初猜
+## 5. analyze 命令：分析已有 NEB 结果
+
+`analyze` 是从旧 `nebresult.py` 迁移来的通用分析流程。它读取已有 NEB 结果，输出能量曲线和 summary，适合先把一次 NEB 的主要数值整理清楚。
+
+最常用方式是给一个结果目录：
+
+```powershell
+neb-helper analyze D:\code\nebresult\example1
+```
+
+如果目录中有 CP2K `.ener` 文件，会优先按 `.ener` 读取；如果没有 `.ener` 但有 `.restart` 或 `.traj`，会按对应格式自动发现。默认输出：
+
+```text
+D:\code\nebresult\example1\neb_result.png
+D:\code\nebresult\example1\result.txt
+```
+
+`result.txt` 包含：
+
+```text
+source
+forward_barrier_eV
+reverse_barrier_eV
+reaction_energy_eV
+peak_image_index
+image path_A energy_eV
+```
+
+注意：当前 `analyze` 做的是通用 NEB 结果汇总，不自动判断“哪一段是质子转移、哪一段是构象变化”。这些更高阶判断还需要结合具体体系。
+
+### 输入来源
+
+#### 目录自动发现
+
+```powershell
+neb-helper analyze D:\code\nebresult\example1
+```
+
+自动发现优先级是：
+
+```text
+.ener + 可选结构文件
+.restart
+.traj
+```
+
+#### 显式 CP2K .ener
+
+```powershell
+neb-helper analyze --energy-file D:\calc\neb-r-0-1.ener
+```
+
+CP2K `.ener` 通常是 Hartree，默认会转换成 eV 并平移到 image 0：
+
+```text
+energy_eV(image i) = (E_i - E_0) * 27.211386245988
+```
+
+如果 `.ener` 里既有能量又有相邻 image 的距离，`analyze` 会自动用这些距离生成 path 坐标。
+
+#### .ener + .restart
+
+```powershell
+neb-helper analyze --energy-file D:\calc\neb-r-0-1.ener --restart-file D:\calc\neb.restart
+```
+
+这种方式会同时读取能量和最后一组 replica 结构。之后如果加 `--write-xyz`，可以把分析到的 image 结构写成多帧 xyz。
+
+#### ASE .traj
+
+```powershell
+neb-helper analyze --traj-file D:\calc\neb_relax.traj --images-per-band 7
+```
+
+如果一个 `.traj` 里保存了多轮 band，需要指定或让程序推断每个 band 有多少张 image。`--band-index -1` 表示读取最后一个 band。
+
+### 常用选项
+
+```text
+--energy-file PATH         显式指定 CP2K .ener
+--restart-file PATH        显式指定 CP2K .restart
+--traj-file PATH           显式指定 ASE .traj
+--xyz-glob PATTERN         用 replica xyz 文件补充结构
+--image-count N            .ener 无法自动推断 image 数时手动指定
+--line-index N             读取 .ener 第几行，默认 -1 表示最后一行
+--xyz-index INDEX          读取 xyz 的哪个 frame，默认 -1
+--images-per-band N        .traj 每个 band 的 image 数
+--band-index N             .traj 读取第几个 band，默认 -1
+--energy-unit hartree|ev   输入能量单位，默认 hartree
+--absolute-energy          保留绝对能量，不平移到 image 0
+--no-mic                   从结构计算 path 距离时不用 MIC
+--no-smooth                不平滑曲线
+--output-image PATH        图像输出路径
+--dpi N                    图像 DPI，默认 600
+--font NAME                Matplotlib 字体，默认 Times New Roman
+--no-summary               不写 result.txt
+--summary PATH             summary 输出路径
+--write-xyz                有结构时写出 neb_traj.xyz
+--xyz-output PATH          配合 --write-xyz 指定结构输出路径
+```
+
+### 避免覆盖原结果
+
+默认输出会写在输入旁边。如果你只是试跑，可以显式指定临时输出：
+
+```powershell
+neb-helper analyze D:\code\nebresult\example1 --output-image D:\tmp\neb_result.png --summary D:\tmp\result.txt
+```
+
+### 和 slice / dimer 的关系
+
+`analyze` 先回答“这条路径的能量和峰值 image 是什么”。然后你再基于人工判断选择：
+
+```text
+slice：裁剪真正关心的路径段
+dimer：从接近 TS 的 image pair 生成 DIMER 初猜
+```
+## 6. dimer 命令：从已有路径派生 DIMER 初猜
 
 `neb-helper dimer` 不需要 make 配置文件，它直接读取已有 `image_*.xyz`。
 
@@ -787,7 +904,7 @@ D:\code\nebresult\dimer_guess_001_002\dimer_vector.inc
 --scale X                  归一化后缩放
 ```
 
-### 5.1 多个 DIMER 初猜
+### 6.1 多个 DIMER 初猜
 
 ```powershell
 neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.25 --fraction 0.5 --fraction 0.75
@@ -795,19 +912,19 @@ neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.25 --frac
 
 输出文件名会带 fraction tag，避免覆盖。
 
-### 5.2 只保留反应中心
+### 6.2 只保留反应中心
 
 ```powershell
 neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5 --active-atoms "10,12,13,48" --atoms active
 ```
 
-### 5.3 保留所有原子
+### 6.3 保留所有原子
 
 ```powershell
 neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5 --atoms all
 ```
 
-## 6. slice 命令：裁剪和重采样已有路径
+## 7. slice 命令：裁剪和重采样已有路径
 
 `slice` 直接读取已有 `image_*.xyz`，输出新的重编号 band。
 
@@ -843,13 +960,13 @@ slice_000_003\source_map.csv
 --source-map NAME          source map 文件名；空字符串禁用
 ```
 
-### 6.1 裁剪 0-3
+### 7.1 裁剪 0-3
 
 ```powershell
 neb-helper slice --source D:\code\nebresult --range 0 3
 ```
 
-### 6.2 把 0-3 重采样为 7 个中间 image
+### 7.2 把 0-3 重采样为 7 个中间 image
 
 ```powershell
 neb-helper slice --source D:\code\nebresult --range 0 3 --resample-n-images 7
@@ -857,13 +974,13 @@ neb-helper slice --source D:\code\nebresult --range 0 3 --resample-n-images 7
 
 总输出 image 数是 `7 + 2 = 9`。
 
-### 6.3 反向路径
+### 7.3 反向路径
 
 ```powershell
 neb-helper slice --source D:\code\nebresult --range 3 0
 ```
 
-## 7. 当前质子转移案例如何使用
+## 8. 当前质子转移案例如何使用
 
 如果你判断：
 
@@ -874,7 +991,7 @@ neb-helper slice --source D:\code\nebresult --range 3 0
 
 可选路线：
 
-### 7.1 DIMER 路线
+### 8.1 DIMER 路线
 
 ```powershell
 neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5 --active-atoms "你的反应中心原子" --atoms active
@@ -882,7 +999,7 @@ neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5 --activ
 
 再用 `ts_guess.xyz` 和 `dimer_vector.inc` 准备 CP2K DIMER。
 
-### 7.2 NEB 裁剪路线
+### 8.2 NEB 裁剪路线
 
 ```powershell
 neb-helper slice --source D:\code\nebresult --range 0 3
@@ -896,9 +1013,9 @@ neb-helper slice --source D:\code\nebresult --range 0 3 --resample-n-images 7
 
 然后你可以考虑把 `image_003` 附近做几何优化和频率确认，再把确认后的结构作为新的 product 端点。
 
-## 8. 常见错误和处理
+## 9. 常见错误和处理
 
-### 8.1 找不到 image 文件
+### 9.1 找不到 image 文件
 
 检查命名是否是：
 
@@ -913,11 +1030,11 @@ image_001.xyz
 --prefix your_prefix --suffix your_suffix
 ```
 
-### 8.2 原子数或顺序不一致
+### 9.2 原子数或顺序不一致
 
 `make` 里用 `endpoint_reorder` 解决端点顺序问题。`dimer` / `slice` 要求已有 image 已经是一条兼容路径，不能自动重排中间 image。
 
-### 8.3 MACE / DeepMD 导入失败
+### 9.3 MACE / DeepMD 导入失败
 
 说明当前 Python 环境没有装对应包，或 CUDA/依赖不匹配。先确认：
 
@@ -926,7 +1043,7 @@ python -c "import mace"
 python -c "import deepmd"
 ```
 
-### 8.4 GPU 显存不足
+### 9.4 GPU 显存不足
 
 对 `neb_relax` 调小：
 
@@ -948,7 +1065,7 @@ force_evaluator: ase
 
 牺牲速度换稳定性。
 
-### 8.5 DIMER_VECTOR 是零向量
+### 9.5 DIMER_VECTOR 是零向量
 
 可能是：
 
@@ -967,7 +1084,7 @@ frozen_atoms 把所有 selected atoms 都置零了
 
 确认不是结构本身问题。
 
-## 9. 现在暂缓的功能
+## 10. 现在暂缓的功能
 
 暂时不把 `analyze` 和 `endpoint` 做成正式命令。原因是它们需要把化学判断编码进工具，例如：
 
