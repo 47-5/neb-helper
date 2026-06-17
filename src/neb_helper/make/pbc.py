@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-import numpy as np
 from typing import Tuple
+
+import numpy as np
+
+from neb_helper.common.geometry import mic_displacement as _common_mic_displacement
 
 
 def assert_compatible_endpoints(initial, final, cell_tol: float = 1.0e-6) -> None:
@@ -16,15 +19,7 @@ def assert_compatible_endpoints(initial, final, cell_tol: float = 1.0e-6) -> Non
 
 
 def mic_displacement(pos_a, pos_b, cell, pbc) -> np.ndarray:
-    pos_a = np.asarray(pos_a, dtype=float)
-    pos_b = np.asarray(pos_b, dtype=float)
-    cell = np.asarray(cell, dtype=float)
-    pbc = np.asarray(pbc, dtype=bool)
-    delta_frac = (pos_b - pos_a) @ np.linalg.inv(cell)
-    for axis, is_periodic in enumerate(pbc):
-        if is_periodic:
-            delta_frac[..., axis] -= np.round(delta_frac[..., axis])
-    return delta_frac @ cell
+    return _common_mic_displacement(pos_a, pos_b, cell, pbc)
 
 
 def sanitize_image(atoms, ref_cell=None, ref_pbc=None, eps: float = 1.0e-12):

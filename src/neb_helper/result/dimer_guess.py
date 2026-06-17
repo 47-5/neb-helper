@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
@@ -8,6 +8,7 @@ from typing import Sequence
 import numpy as np
 from ase.io import write
 
+from neb_helper.common.geometry import assert_compatible_pair, interpolate_mic, mic_displacement
 from neb_helper.make.atom_selection import parse_atom_indices, parse_atom_selector
 from neb_helper.make.dimer_vector import format_dimer_vector, mask_vector, resolve_atom_indices
 
@@ -56,15 +57,22 @@ def generate_dimer_guess(
             "Custom structure_name/vector_name are only supported for one fraction. "
             "Use the default fraction-tagged names for multiple guesses."
         )
+    if left_index == right_index:
+        raise ValueError("DIMER guess needs two distinct image indices.")
 
     image_map = read_image_map(source, prefix=prefix, suffix=suffix)
     left, right = require_images(image_map, [left_index, right_index])
-    _validate_pair(left, right, left_index=left_index, right_index=right_index)
+    assert_compatible_pair(
+        left,
+        right,
+        left_label=f"Image {left_index}",
+        right_label=f"Image {right_index}",
+    )
 
     output_dir = Path(output_dir) if output_dir else Path(source) / _default_output_dir(left_index, right_index)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    displacement = _mic_displacement(
+    displacement = mic_displacement(
         left.get_positions(),
         right.get_positions(),
         left.cell.array,
@@ -134,18 +142,8 @@ def generate_dimer_guess(
 def interpolate_pair(left, right, fraction: float):
     if fraction < 0.0 or fraction > 1.0:
         raise ValueError(f"DIMER guess fraction must be in [0, 1], got {fraction}.")
-    _validate_pair(left, right, left_index=0, right_index=1)
-    displacement = _mic_displacement(
-        left.get_positions(),
-        right.get_positions(),
-        left.cell.array,
-        left.get_pbc(),
-    )
-    image = left.copy()
-    image.set_cell(left.cell, scale_atoms=False)
-    image.set_pbc(left.get_pbc())
-    image.set_positions(left.get_positions() + float(fraction) * displacement)
-    return image
+    assert_compatible_pair(left, right)
+    return interpolate_mic(left, right, fraction)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -254,40 +252,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--scale", type=float, default=1.0, help="Scale applied after optional normalization.")
     return parser
-
-
-def _validate_pair(left, right, *, left_index: int, right_index: int) -> None:
-    if left_index == right_index:
-        raise ValueError("DIMER guess needs two distinct image indices.")
-    if len(left) != len(right):
-        raise ValueError(
-            f"Images {left_index} and {right_index} have different atom counts: "
-            f"{len(left)} vs {len(right)}."
-        )
-    if left.get_chemical_symbols() != right.get_chemical_symbols():
-        raise ValueError(f"Images {left_index} and {right_index} use different atom orders.")
-    if not np.array_equal(left.get_pbc(), right.get_pbc()):
-        raise ValueError(f"Images {left_index} and {right_index} use different PBC flags.")
-    if np.any(left.get_pbc()):
-        if not np.allclose(left.cell.array, right.cell.array, atol=1.0e-6):
-            raise ValueError(f"Images {left_index} and {right_index} use different cells.")
-        if abs(float(np.linalg.det(left.cell.array))) < 1.0e-12:
-            raise ValueError(f"Images {left_index} and {right_index} require a non-singular cell for PBC MIC.")
-
-
-def _mic_displacement(pos_a, pos_b, cell, pbc) -> np.ndarray:
-    pos_a = np.asarray(pos_a, dtype=float)
-    pos_b = np.asarray(pos_b, dtype=float)
-    pbc = np.asarray(pbc, dtype=bool)
-    delta = pos_b - pos_a
-    if not np.any(pbc):
-        return delta
-    cell = np.asarray(cell, dtype=float)
-    delta_frac = delta @ np.linalg.inv(cell)
-    for axis, is_periodic in enumerate(pbc):
-        if is_periodic:
-            delta_frac[..., axis] -= np.round(delta_frac[..., axis])
-    return delta_frac @ cell
 
 
 def _normalize_fractions(fractions: Sequence[float]) -> list[float]:

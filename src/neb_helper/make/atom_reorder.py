@@ -5,22 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-
-def mic_displacement(pos_a, pos_b, cell, pbc) -> np.ndarray:
-    pos_a = np.asarray(pos_a, dtype=float)
-    pos_b = np.asarray(pos_b, dtype=float)
-    cell = np.asarray(cell, dtype=float)
-    pbc = np.asarray(pbc, dtype=bool)
-
-    delta = pos_b - pos_a
-    if not np.any(pbc):
-        return delta
-
-    delta_frac = delta @ np.linalg.inv(cell)
-    for axis, is_periodic in enumerate(pbc):
-        if is_periodic:
-            delta_frac[..., axis] -= np.round(delta_frac[..., axis])
-    return delta_frac @ cell
+from neb_helper.common.geometry import mic_displacement
 
 
 def pairwise_mic_distances(ref_positions, target_positions, cell, pbc) -> np.ndarray:
@@ -121,3 +106,4 @@ def write_mapping_csv(path, symbols, target_order, distances) -> None:
                 f"{ref_index},{target_index},{symbols[ref_index]},"
                 f"{distances[ref_index]:.10f}\n"
             )
+

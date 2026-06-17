@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import csv
@@ -8,6 +8,9 @@ from typing import Sequence
 
 import numpy as np
 from ase.io import write
+
+from neb_helper.common.cp2k import write_band_file
+from neb_helper.common.geometry import assert_compatible_images, interpolate_mic, path_segment_lengths
 
 from .band_io import read_image_map, require_images
 
@@ -51,7 +54,10 @@ def slice_band(
     source_indices = _inclusive_range(start_index, end_index)
     image_map = read_image_map(source, prefix=prefix, suffix=suffix)
     source_images = require_images(image_map, source_indices)
-    _validate_images(source_images, source_indices)
+    assert_compatible_images(
+        source_images,
+        labels=[f"Image {index}" for index in source_indices],
+    )
 
     output_dir = Path(output_dir) if output_dir else Path(source) / _default_output_dir(start_index, end_index)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -79,8 +85,11 @@ def slice_band(
 
     band_path = None
     if band_file:
-        band_path = output_dir / band_file
-        _write_band_file(band_path, output_prefix, len(output_images))
+        band_path = write_band_file(
+            output_dir / band_file,
+            prefix=output_prefix,
+            n_images=len(output_images),
+        )
 
     source_map_path = None
     if source_map:
@@ -175,32 +184,12 @@ def _inclusive_range(start: int, end: int) -> list[int]:
     return list(range(start, end + step, step))
 
 
-def _validate_images(images: Sequence[object], source_indices: Sequence[int]) -> None:
-    if not images:
-        raise ValueError("At least one source image is required.")
-    reference = images[0]
-    symbols = reference.get_chemical_symbols()
-    pbc = reference.get_pbc()
-    cell = reference.cell.array
-    for image, index in zip(images[1:], source_indices[1:]):
-        if len(image) != len(reference):
-            raise ValueError(f"Image {index} has {len(image)} atoms; expected {len(reference)}.")
-        if image.get_chemical_symbols() != symbols:
-            raise ValueError(f"Image {index} uses a different atom order.")
-        if not np.array_equal(image.get_pbc(), pbc):
-            raise ValueError(f"Image {index} uses different PBC flags.")
-        if np.any(pbc) and not np.allclose(image.cell.array, cell, atol=1.0e-6):
-            raise ValueError(f"Image {index} uses a different cell.")
-    if np.any(pbc) and abs(float(np.linalg.det(cell))) < 1.0e-12:
-        raise ValueError("PBC images require a non-singular cell for MIC resampling.")
-
-
 def _copy_records(source_images: Sequence[object], source_indices: Sequence[int]) -> list[SliceImageRecord]:
     n_images = len(source_indices)
     if n_images == 1:
         cumulative = np.asarray([0.0], dtype=float)
     else:
-        cumulative = np.concatenate(([0.0], np.cumsum(_segment_lengths(source_images))))
+        cumulative = np.concatenate(([0.0], np.cumsum(path_segment_lengths(source_images))))
     total_length = float(cumulative[-1]) if len(cumulative) else 0.0
     denominator = max(1, n_images - 1)
 
@@ -234,7 +223,7 @@ def _resample_images(
     if len(source_images) == 1:
         raise ValueError("Cannot resample a one-image slice into multiple images.")
 
-    segment_lengths = _segment_lengths(source_images)
+    segment_lengths = path_segment_lengths(source_images)
     cumulative = np.concatenate(([0.0], np.cumsum(segment_lengths)))
     total_length = float(cumulative[-1])
     if total_length <= 0.0:
@@ -252,17 +241,7 @@ def _resample_images(
         fraction = 0.0 if segment_length <= 0.0 else (float(target) - segment_start) / segment_length
         fraction = min(1.0, max(0.0, fraction))
 
-        displacement = _mic_displacement(
-            left.get_positions(),
-            right.get_positions(),
-            left.cell.array,
-            left.get_pbc(),
-        )
-        image = left.copy()
-        image.set_cell(source_images[0].cell, scale_atoms=False)
-        image.set_pbc(source_images[0].get_pbc())
-        image.set_positions(left.get_positions() + fraction * displacement)
-        output_images.append(image)
+        output_images.append(interpolate_mic(left, right, fraction))
         records.append(
             SliceImageRecord(
                 output_index=output_index,
@@ -276,47 +255,11 @@ def _resample_images(
     return output_images, records
 
 
-def _segment_lengths(images: Sequence[object]) -> np.ndarray:
-    lengths = []
-    for left, right in zip(images, images[1:]):
-        displacement = _mic_displacement(
-            left.get_positions(),
-            right.get_positions(),
-            left.cell.array,
-            left.get_pbc(),
-        )
-        lengths.append(float(np.sqrt(np.sum(displacement * displacement))))
-    return np.asarray(lengths, dtype=float)
-
-
 def _target_segment(cumulative: np.ndarray, target: float) -> int:
     if np.isclose(target, cumulative[-1]):
         return len(cumulative) - 2
     index = int(np.searchsorted(cumulative, target, side="right") - 1)
     return min(max(index, 0), len(cumulative) - 2)
-
-
-def _mic_displacement(pos_a, pos_b, cell, pbc) -> np.ndarray:
-    pos_a = np.asarray(pos_a, dtype=float)
-    pos_b = np.asarray(pos_b, dtype=float)
-    pbc = np.asarray(pbc, dtype=bool)
-    delta = pos_b - pos_a
-    if not np.any(pbc):
-        return delta
-    cell = np.asarray(cell, dtype=float)
-    delta_frac = delta @ np.linalg.inv(cell)
-    for axis, is_periodic in enumerate(pbc):
-        if is_periodic:
-            delta_frac[..., axis] -= np.round(delta_frac[..., axis])
-    return delta_frac @ cell
-
-
-def _write_band_file(path: Path, output_prefix: str, n_images: int) -> None:
-    with path.open("w", encoding="utf-8") as handle:
-        for index in range(n_images):
-            handle.write("&REPLICA\n")
-            handle.write(f"  COORD_FILE_NAME {output_prefix}_{index:03d}.xyz\n")
-            handle.write("&END REPLICA\n")
 
 
 def _write_source_map(path: Path, records: Sequence[SliceImageRecord]) -> None:
@@ -352,4 +295,3 @@ def _default_output_dir(start_index: int, end_index: int) -> str:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

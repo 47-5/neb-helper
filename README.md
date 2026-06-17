@@ -1,4 +1,4 @@
-﻿# neb-helper
+# neb-helper
 
 `neb-helper` is a Python toolbox for NEB workflows.
 

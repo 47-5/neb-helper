@@ -5,6 +5,7 @@ from pathlib import Path
 from ase.io import write
 from ase.io.vasp import write_vasp
 
+from ...common.cp2k import write_band_file
 from ..pbc import outside_fractional_span, sanitize_image
 
 
@@ -38,17 +39,12 @@ def write_outputs(images, spec):
         write(str(output_dir / spec.output.trajectory), output_images, format="xyz")
 
     if spec.output.cp2k_band:
-        _write_band_file(output_dir / spec.output.cp2k_band, spec, len(output_images))
+        write_band_file(
+            output_dir / spec.output.cp2k_band,
+            prefix=spec.output.images_prefix,
+            n_images=len(output_images),
+        )
     return output_images
-
-
-def _write_band_file(path: Path, spec, n_images: int) -> None:
-    with path.open("w", encoding="utf-8") as handle:
-        for index in range(n_images):
-            filename = f"{spec.output.images_prefix}_{index:03d}.xyz"
-            handle.write("&REPLICA\n")
-            handle.write(f"  COORD_FILE_NAME {filename}\n")
-            handle.write("&END REPLICA\n")
 
 
 def _enforce_inside_box(atoms, spec) -> None:

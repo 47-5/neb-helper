@@ -6,6 +6,8 @@ from typing import Optional, Sequence, Union
 
 import numpy as np
 
+from neb_helper.common.geometry import mic_displacement
+
 
 ImageSelector = Union[int, str]
 AtomSelector = Union[str, Sequence[int], None]
@@ -117,7 +119,7 @@ def tangent_from_neighbor_images(images, image_index: int) -> np.ndarray:
     _validate_internal_image_index(image_index, len(images))
     left = images[image_index - 1]
     right = images[image_index + 1]
-    return _mic_displacement(
+    return mic_displacement(
         left.get_positions(),
         right.get_positions(),
         images[image_index].cell.array,
@@ -213,16 +215,3 @@ def _validate_atom_indices(indices: Sequence[int], n_atoms: int) -> None:
         raise ValueError(f"Atom indices out of range for {n_atoms} atoms: {bad}")
 
 
-def _mic_displacement(pos_a, pos_b, cell, pbc) -> np.ndarray:
-    pos_a = np.asarray(pos_a, dtype=float)
-    pos_b = np.asarray(pos_b, dtype=float)
-    cell = np.asarray(cell, dtype=float)
-    pbc = np.asarray(pbc, dtype=bool)
-    delta = pos_b - pos_a
-    if not np.any(pbc):
-        return delta
-    delta_frac = delta @ np.linalg.inv(cell)
-    for axis, is_periodic in enumerate(pbc):
-        if is_periodic:
-            delta_frac[..., axis] -= np.round(delta_frac[..., axis])
-    return delta_frac @ cell
