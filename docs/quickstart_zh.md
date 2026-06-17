@@ -55,6 +55,36 @@ neb-helper config.yaml
 
 其中 `neb-helper config.yaml` 会自动等价于 `neb-helper make config.yaml`。
 
+### Python API：在 IDE 中使用
+
+安装后也可以完全不走命令行，直接在 Python 脚本里导入：
+
+```python
+from neb_helper import analyze_neb, generate_dimer_guess, slice_band
+
+_, summary = analyze_neb(
+    input_path=r"D:\code\nebresult\example1",
+    output_image=r"D:\tmp\neb_result.png",
+    summary_path=r"D:\tmp\result.txt",
+)
+print(summary.forward_barrier)
+```
+
+如果你更喜欢显式的 API 入口，也可以写：
+
+```python
+from neb_helper.api import load_config, make_neb_path
+```
+
+仓库里有可直接改路径运行的脚本模板：
+
+```text
+examples/python_api/analyze_result.py
+examples/python_api/dimer_guess.py
+examples/python_api/slice_band.py
+examples/python_api/make_from_config.py
+```
+
 ## 4. make：从端点构造 NEB 初猜
 
 先生成一个模板配置：

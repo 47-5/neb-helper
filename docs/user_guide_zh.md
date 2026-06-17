@@ -7,9 +7,10 @@
 `neb-helper` 是一个 NEB 工作流工具箱，当前主要有四类命令：
 
 ```powershell
-neb-helper make   # 从 initial/final 构造 NEB 初猜，可选 MLFF 预优化和 MLFF-NEB
-neb-helper dimer  # 从已有 NEB image pair 生成 DIMER 初猜和 DIMER_VECTOR
-neb-helper slice  # 从已有 NEB band 裁剪/重采样一段路径
+neb-helper make     # 从 initial/final 构造 NEB 初猜，可选 MLFF 预优化和 MLFF-NEB
+neb-helper analyze  # 从已有 NEB 结果读取能量、画图、写 summary
+neb-helper dimer    # 从已有 NEB image pair 生成 DIMER 初猜和 DIMER_VECTOR
+neb-helper slice    # 从已有 NEB band 裁剪/重采样一段路径
 ```
 
 Python 包结构大致是：
@@ -42,6 +43,7 @@ pip install -e .
 ```text
 ase
 numpy
+matplotlib
 PyYAML
 ```
 
@@ -59,8 +61,60 @@ pip install -e ".[ml]"
 neb-helper --version
 neb-helper --help
 neb-helper make --help
+neb-helper analyze --help
 neb-helper dimer --help
 neb-helper slice --help
+```
+
+### 2.1 Python API / IDE 用法
+
+`neb-helper` 不只是命令行工具，也可以作为普通 Python 包导入。推荐 IDE 用户先用 editable 安装：
+
+```powershell
+cd D:\code\neb-helper
+pip install -e .
+```
+
+之后脚本里可以直接导入顶层 API：
+
+```python
+from neb_helper import analyze_neb, generate_dimer_guess, slice_band
+
+_, summary = analyze_neb(
+    input_path=r"D:\code\nebresult\example1",
+    output_image=r"D:\tmp\neb_result.png",
+    summary_path=r"D:\tmp\result.txt",
+)
+print(summary.forward_barrier)
+```
+
+也可以使用显式门面模块：
+
+```python
+from neb_helper.api import load_config, make_neb_path
+
+spec = load_config(r"D:\path\to\nebmake.yaml")
+result = make_neb_path(spec)
+print(result["output_dir"])
+```
+
+当前稳定脚本入口包括：
+
+```text
+load_config
+make_neb_path
+analyze_neb
+analyze_neb_files
+generate_dimer_guess
+slice_band
+read_neb_energy
+summarize_barrier
+```
+
+示例脚本在：
+
+```text
+examples/python_api/
 ```
 
 ## 3. 文件和编号约定

@@ -26,6 +26,29 @@ For editable development:
 pip install -e .
 ```
 
+## Python API
+
+The same workflows can be used from scripts, notebooks, or IDE run configurations:
+
+```python
+from neb_helper import analyze_neb, generate_dimer_guess, slice_band
+
+_, summary = analyze_neb(
+    input_path=r"D:\code\nebresult\example1",
+    output_image=r"D:\tmp\neb_result.png",
+    summary_path=r"D:\tmp\result.txt",
+)
+print(summary.forward_barrier)
+```
+
+The importable API is also collected under `neb_helper.api`:
+
+```python
+from neb_helper.api import load_config, make_neb_path
+```
+
+See `examples/python_api/` for runnable script templates.
+
 ## Build a NEB Path
 
 Build a NEB path from a YAML or JSON config:
