@@ -7,6 +7,10 @@ The package has two intended layers:
 - `neb_helper.make`: build CP2K-oriented NEB paths from initial/final structures. This is the current `nebmake_v2` implementation.
 - `neb_helper.result`: analyze existing NEB results and derive follow-up workflows once a first-pass band has revealed useful prior knowledge.
 
+## Documentation
+
+- [中文快速教程](docs/quickstart_zh.md)
+
 ## Install
 
 From this repository:
