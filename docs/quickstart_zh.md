@@ -1,6 +1,6 @@
 # neb-helper 快速教程
 
-这份教程帮助你快速理解 `neb-helper` 现在能做什么，以及在一个已有 NEB 结果基础上怎么继续推进。
+这份教程帮助你快速理解 `neb-helper` 现在能做什么，以及在一个已有 NEB 结果基础上怎么继续推进。完整字段和高级功能说明见 [user_guide_zh.md](user_guide_zh.md)。
 
 ## 1. 工具定位
 

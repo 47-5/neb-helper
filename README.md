@@ -10,6 +10,7 @@ The package has two intended layers:
 ## Documentation
 
 - [中文快速教程](docs/quickstart_zh.md)
+- [中文完整功能手册](docs/user_guide_zh.md)
 
 ## Install
 
