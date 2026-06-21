@@ -1,10 +1,17 @@
-"""Generate a DIMER guess from Python."""
+"""Generate a DIMER guess from Python.
 
-from neb_helper import generate_dimer_guess
+This example shows both supported Python entry points:
+
+- direct keyword arguments, useful in notebooks and scripts;
+- YAML/JSON config files, useful when you want the Python script and CLI to
+  share the same configuration.
+"""
+
+from neb_helper import generate_dimer_guess, generate_dimer_guess_from_config
 
 
 def main() -> None:
-    result = generate_dimer_guess(
+    direct_result = generate_dimer_guess(
         source=r"D:\code\nebresult",
         left_index=1,
         right_index=2,
@@ -13,11 +20,16 @@ def main() -> None:
         atoms="active",
     )
 
-    print(f"output directory: {result.output_dir}")
-    for file in result.files:
+    print(f"direct output directory: {direct_result.output_dir}")
+    for file in direct_result.files:
         print(f"fraction {file.fraction:.3f}")
         print(f"  structure: {file.structure_path}")
         print(f"  vector:    {file.vector_path}")
+
+    config_result = generate_dimer_guess_from_config(
+        r"D:\code\neb-helper\examples\dimer\dimer_guess.yaml"
+    )
+    print(f"config output directory: {config_result.output_dir}")
 
 
 if __name__ == "__main__":

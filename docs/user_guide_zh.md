@@ -4,11 +4,12 @@
 
 ## 1. 总体结构
 
-`neb-helper` 是一个 NEB 工作流工具箱，当前主要有四类命令：
+`neb-helper` 是一个 NEB 工作流工具箱，当前主要有五类命令：
 
 ```powershell
 neb-helper make     # 从 initial/final 构造 NEB 初猜，可选 MLFF 预优化和 MLFF-NEB
 neb-helper analyze  # 从已有 NEB 结果读取能量、画图、写 summary
+neb-helper tsguess  # 从 IS/FS 端点生成 TS 候选结构和 DIMER_VECTOR
 neb-helper dimer    # 从已有 NEB image pair 生成 DIMER 初猜和 DIMER_VECTOR
 neb-helper slice    # 从已有 NEB band 裁剪/重采样一段路径
 ```
@@ -62,6 +63,7 @@ neb-helper --version
 neb-helper --help
 neb-helper make --help
 neb-helper analyze --help
+neb-helper tsguess --help
 neb-helper dimer --help
 neb-helper slice --help
 ```
@@ -78,7 +80,7 @@ pip install -e .
 之后脚本里可以直接导入顶层 API：
 
 ```python
-from neb_helper import analyze_neb, generate_dimer_guess, slice_band
+from neb_helper import analyze_neb, generate_dimer_guess, generate_ts_guess, slice_band
 
 _, summary = analyze_neb(
     input_path=r"D:\code\nebresult\example1",
@@ -91,7 +93,7 @@ print(summary.forward_barrier)
 也可以使用显式门面模块：
 
 ```python
-from neb_helper.api import load_config, make_neb_path
+from neb_helper.api import load_config, make_neb_path, load_ts_guess_config
 
 spec = load_config(r"D:\path\to\nebmake.yaml")
 result = make_neb_path(spec)
@@ -106,9 +108,22 @@ make_neb_path
 analyze_neb
 analyze_neb_files
 generate_dimer_guess
+generate_dimer_guess_from_config
+load_dimer_guess_config
+generate_ts_guess
+load_ts_guess_config
 slice_band
 read_neb_energy
 summarize_barrier
+```
+
+常见返回对象包括：
+
+```text
+DimerGuessResult    dimer 输出目录、选中原子、结构文件和 DIMER_VECTOR 文件列表
+TsGuessResult       tsguess 推荐 fraction、推荐结构、metrics、notes、DIMER_VECTOR、方向检查轨迹
+SliceBandResult     slice 输出目录、band 文件、轨迹文件、source map
+BarrierSummary      analyze 的 forward/reverse barrier、reaction energy、peak image
 ```
 
 示例脚本在：
@@ -152,7 +167,7 @@ PBC flags 相同
 cell 相同或足够接近
 ```
 
-`dimer` 和 `slice` 读取已有 image 时，也会检查 image 之间是否兼容。
+`tsguess` 读取 IS/FS 端点时也要求同样兼容。`dimer` 和 `slice` 读取已有 image 时，也会检查 image 之间是否兼容。
 
 ## 4. make：从端点构造 NEB 路径
 
@@ -930,12 +945,409 @@ neb-helper analyze D:\code\nebresult\example1 --output-image D:\tmp\neb_result.p
 slice：裁剪真正关心的路径段
 dimer：从接近 TS 的 image pair 生成 DIMER 初猜
 ```
-## 6. dimer 命令：从已有路径派生 DIMER 初猜
+## 6. tsguess 命令：从 IS/FS 端点生成 TS/DIMER 初猜
 
-`neb-helper dimer` 不需要 make 配置文件，它直接读取已有 `image_*.xyz`。
+`neb-helper tsguess` 用于从同一反应的 IS/FS 端点直接生成一组 TS 候选结构，并可选生成 CP2K `&DIMER_VECTOR`。它不是 TS 优化器，也不替代频率验证；它的定位是把一个“化学上合理、方向上合理”的初猜准备好，供后续 CP2K DIMER、NEB 或频率计算使用。
+
+典型命令：
+
+```powershell
+neb-helper tsguess examples\tsguess\sc_dmf_c2h4.yaml
+```
+
+`examples\tsguess\sc_dmf_c2h4.yaml` 是模板配置。真实 Sc/u-Sc CIF 不随仓库提交；运行前需要替换 `initial` / `final`，或把对应 CIF 放在 YAML 同目录。
+
+适合使用 `tsguess` 的情况：
+
+```text
+IS/FS 都已经可靠，但线性插值产生坏键或穿插
+强金属/酸位点锚定导致 DIMER 初猜容易滑回 IS
+你已经知道关键 forming / weakening 原子编号
+希望一次生成多个候选 fraction 并用 metrics 透明比较
+希望从局部路径切线生成 active-only DIMER_VECTOR
+```
+
+### 6.1 最小配置
+
+```yaml
+workflow: tsguess
+
+initial: Sc_DMF_C2H4_IS-1.cif
+final: Sc_DMF_C2H4_FS-1.cif
+
+atom_indices_1_based: true
+active_atoms: "577-598"
+
+path:
+  method: active_idpp
+  base: initial
+  fractions: [0.70, 0.75, 0.78, 0.80]
+
+reaction_coordinates:
+  forming_bonds:
+    - [578, 594]
+    - [581, 593]
+  weakening_bonds:
+    - [577, 582]
+
+selection:
+  prefer_fraction: 0.75
+  forming_range: [2.10, 2.45]
+  weakening_min: 3.0
+
+candidate_outputs:
+  directory: tsguess_outputs
+  format: cif
+
+dimer_vector:
+  enabled: true
+  source: local_tangent
+  tangent_fractions: [0.70, 0.78]
+  atoms: active
+  remove_translation: active
+
+check:
+  enabled: true
+  amplitude: 1.0
+```
+
+这份配置假设：
+
+```text
+IS/FS 原子顺序一致
+编号来自 1-based 可视化软件
+577-598 是反应中心
+两条 C-C 键正在形成
+577-582 代表需要削弱的锚定键或配位键
+TS 大概偏产物侧，所以扫描 0.70-0.80
+```
+
+### 6.2 输入端点和编号
+
+```yaml
+initial: IS.cif
+final: FS.cif
+atom_indices_1_based: true
+active_atoms: "577-598"
+frozen_atoms: "1-576"
+```
+
+`initial` 和 `final` 必须满足：
+
+```text
+原子数一致
+元素顺序一致
+PBC flags 一致
+有 PBC 时 cell 一致或足够接近
+```
+
+`atom_indices_1_based: true` 会把 YAML 里的原子编号从 1-based 转换成 Python/ASE 内部的 0-based。来自 GaussView、VESTA、VMD 显示标签的编号通常应该用 1-based；来自 Python 脚本或 ASE list 的编号通常是 0-based。
+
+`active_atoms` 控制候选路径中哪些原子会按 IS -> FS 位移移动和参与 active-region IDPP-like 清理。未指定 `active_atoms` 时，候选路径会把全体系都视为 active；但如果 `dimer_vector.atoms: active`，建议显式指定 active_atoms，否则大体系 DIMER_VECTOR 会包含过多无关运动。
+
+### 6.3 path：候选结构如何生成
+
+```yaml
+path:
+  method: active_idpp
+  base: initial
+  fractions: [0.70, 0.75, 0.78, 0.80]
+  idpp:
+    steps: 200
+    max_step: 0.03
+    tolerance: 1.0e-5
+    tether_weight: 0.02
+```
+
+字段说明：
+
+```text
+method       active_idpp / idpp_like / active_linear / linear / mic_linear
+base         initial / final / linear
+fractions    从 IS 到 FS 的候选反应进度
+idpp.steps   active-region IDPP-like 梯度下降步数
+max_step     每步最大位移，用于避免清理过程太激进
+tolerance    active gradient 收敛阈值
+tether_weight 对线性插值位置的弱约束，避免结构过度漂移
+```
+
+推荐默认是：
+
+```yaml
+method: active_idpp
+base: initial
+```
+
+含义是：非 active 背景保留 IS，active 原子按 MIC 位移插值，并在 active region 内做内部距离清理。对分子筛、表面、金属配位大体系，这通常比全体系 Cartesian 插值更稳。
+
+`base: final` 适合你希望背景更接近产物端的情况。`base: linear` 会让非 active 原子也按 IS/FS 线性插值，适合小分子或全体系都参与反应的情况。
+
+### 6.4 reaction_coordinates：监控哪些几何量
+
+当前第一版支持三类 bond distance：
+
+```yaml
+reaction_coordinates:
+  forming_bonds:
+    - [578, 594]
+    - [581, 593]
+  weakening_bonds:
+    - [577, 582]
+  monitor_bonds:
+    - [593, 594]
+```
+
+用途：
+
+```text
+forming_bonds    候选 TS 中希望落在合理成键距离范围内的键
+weakening_bonds  候选 TS 中希望已经拉长/削弱的键
+monitor_bonds    只写入 metrics.csv，不直接参与评分
+```
+
+这些编号是化学知识，工具不会自动判断。对新体系，通常先从 IS/FS 差异最大的键长变化中找 forming / weakening pair，再放入 YAML。
+
+### 6.5 selection：如何推荐一个候选
+
+```yaml
+selection:
+  prefer_fraction: 0.75
+  prefer_fraction_weight: 0.05
+  forming_range: [2.10, 2.45]
+  target_forming_distance:
+  asymmetry_weight: 0.25
+  weakening_min: 3.0
+  min_pair_distance: 0.65
+```
+
+评分逻辑是透明的，所有关键数值都会写入 `metrics.csv`。主要规则：
+
+```text
+forming_range          forming bond 落在该区间内不罚分，太短或太长罚分
+target_forming_distance 若指定，则按目标距离而不是区间打分
+asymmetry_weight       多条 forming bond 不同步时的额外罚分
+weakening_min          weakening bond 短于该值时罚分
+min_pair_distance      active region 内任意原子对太近时强烈罚分
+prefer_fraction        弱偏好，避免几何得分相近时选择离预期太远的 fraction
+```
+
+注意：推荐结构只是“几何和反应坐标上更像 TS 初猜”的候选，不是已经优化过的 TS。后续仍然需要 DIMER/NEB 和频率验证。
+
+### 6.6 candidate_outputs：输出文件
+
+```yaml
+candidate_outputs:
+  directory: tsguess_outputs
+  format: cif
+  write_all: true
+  candidate_template: "ts_guess_{tag}.cif"
+  recommended_name: "ts_guess_recommended_{tag}.cif"
+  metrics: metrics.csv
+  notes: notes.md
+```
+
+典型输出：
+
+```text
+tsguess_outputs/
+  ts_guess_t0p700.cif
+  ts_guess_t0p750.cif
+  ts_guess_t0p780.cif
+  ts_guess_t0p800.cif
+  ts_guess_recommended_t0p750.cif
+  metrics.csv
+  notes.md
+```
+
+`metrics.csv` 是最重要的判断依据之一。它会包含：
+
+```text
+fraction
+recommended
+forming_*
+weakening_*
+monitor_*
+forming_mean
+forming_std
+min_active_pair_distance
+score
+```
+
+如果 `format: xyz` 且不手动指定文件名模板，默认推荐结构后缀会随格式变成 `.xyz`。
+
+### 6.7 dimer_vector：从局部路径切线生成 DIMER_VECTOR
+
+```yaml
+dimer_vector:
+  enabled: true
+  source: local_tangent
+  tangent_fractions: [0.70, 0.78]
+  atoms: active
+  remove_translation: active
+  zero_frozen_atoms: true
+  normalize: true
+  scale: 1.0
+  file: dimer_vector.inc
+```
+
+当前支持的方向来源是：
+
+```text
+source: local_tangent
+```
+
+含义是：
+
+```text
+vector = structure(tangent_fractions[1]) - structure(tangent_fractions[0])
+```
+
+例如 `[0.70, 0.78]` 就是用 `t=0.78 - t=0.70` 作为局部反应方向。相比直接使用 `FS - IS`，局部切线通常更接近 TS 附近的方向，也更少包含无关重排。
+
+字段说明：
+
+```text
+atoms               active / all / 原子列表，控制哪些原子分量写入向量
+remove_translation  active/selected 表示去掉所选原子的整体平移；all 表示全体系去平移
+zero_frozen_atoms   是否把 frozen_atoms 从 selected atoms 中剔除
+normalize           是否归一化向量
+scale               归一化后的缩放系数
+file                输出 CP2K &DIMER_VECTOR 片段
+```
+
+对大体系推荐：
+
+```yaml
+atoms: active
+remove_translation: active
+normalize: true
+```
+
+`DIMER_VECTOR` 的正负号通常不影响 DIMER 搜索，因为 `v` 和 `-v` 描述的是同一条方向轴。只有当你希望方向检查轨迹中的 `minus -> center -> plus` 明确对应 IS -> FS 时，才需要交换 `tangent_fractions` 顺序。
+
+### 6.8 check：方向检查轨迹
+
+```yaml
+check:
+  enabled: true
+  amplitude: 1.0
+  file: dimer_direction_check_minus_center_plus.xyz
+```
+
+开启后会写三帧：
+
+```text
+center - amplitude * vector
+center
+center + amplitude * vector
+```
+
+这个文件只用于可视化检查方向。`amplitude` 只影响检查轨迹里的位移大小，不改变推荐结构，也不改变 CP2K 使用的 `dimer_vector.inc`。对 20 个以上 active atoms 的大体系，`0.1` 往往太小，看不出趋势，可以先试 `0.5` 或 `1.0`。
+
+### 6.9 Python API
+
+最短用法：
+
+```python
+from neb_helper import generate_ts_guess
+
+result = generate_ts_guess(r"D:\code\neb-helper\examples\tsguess\sc_dmf_c2h4.yaml")
+
+print(result.recommended_fraction)
+print(result.recommended_structure)
+print(result.metrics_path)
+print(result.dimer_vector_path)
+print(result.check_path)
+```
+
+显式读取配置：
+
+```python
+from neb_helper import generate_ts_guess, load_ts_guess_config
+
+spec = load_ts_guess_config(r"D:\path\to\tsguess.yaml")
+result = generate_ts_guess(spec)
+```
+
+从 Python dict 构造也可以：
+
+```python
+from neb_helper import generate_ts_guess
+
+result = generate_ts_guess(
+    {
+        "initial": r"D:\calc\IS.cif",
+        "final": r"D:\calc\FS.cif",
+        "atom_indices_1_based": True,
+        "active_atoms": "577-598",
+        "path": {"method": "active_idpp", "fractions": [0.70, 0.75, 0.78]},
+        "reaction_coordinates": {
+            "forming_bonds": [[578, 594], [581, 593]],
+            "weakening_bonds": [[577, 582]],
+        },
+        "candidate_outputs": {"directory": r"D:\calc\tsguess_outputs"},
+        "dimer_vector": {
+            "enabled": True,
+            "tangent_fractions": [0.70, 0.78],
+            "atoms": "active",
+            "remove_translation": "active",
+        },
+    }
+)
+```
+
+返回对象 `TsGuessResult` 常用字段：
+
+```text
+output_dir              输出目录
+recommended_fraction    推荐 fraction
+recommended_structure   推荐结构路径
+candidates              每个候选的 fraction、score、metrics、structure_path
+metrics_path            metrics.csv
+notes_path              notes.md
+dimer_vector_path       dimer_vector.inc
+check_path              minus-center-plus 方向检查轨迹
+selected_indices        DIMER_VECTOR 使用的 0-based 原子编号
+raw_dimer_norm          归一化前的 selected vector norm
+```
+
+### 6.10 建议工作流
+
+实际使用时建议按这个顺序：
+
+1. 准备 IS/FS，确认原子顺序一致。
+2. 写 `active_atoms` 和关键 forming / weakening bonds。
+3. 先用较宽的 `fractions` 扫描，例如 `[0.60, 0.70, 0.75, 0.80]`。
+4. 查看 `metrics.csv` 和全部候选结构。
+5. 只在候选都不合理时再调 `active_atoms`、`path.base`、`forming_range` 或 `fractions`。
+6. 打开 `dimer_direction_check_minus_center_plus.xyz`，确认方向轴不是整体平移或无关扭动。
+7. 用推荐结构和 `dimer_vector.inc` 跑短 DIMER。
+8. DIMER 收敛后做频率验证，确认 imaginary mode 对应目标反应。
+
+## 7. dimer 命令：从已有路径派生 DIMER 初猜
+
+`neb-helper dimer` 直接读取已有 `image_*.xyz`，既可以用命令行参数，也可以用 YAML/JSON 配置文件。命令行适合一次性操作；YAML 更适合反复调 active atoms、fraction 和输出目录。
 
 ```powershell
 neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5
+```
+
+等价的 YAML 驱动方式：
+
+```powershell
+neb-helper dimer examples\dimer\dimer_guess.yaml
+```
+
+最小配置：
+
+```yaml
+source: ./neb_path
+between: [1, 2]
+fraction: 0.5
+
+atom_indices_1_based: true
+active_atoms: "577-598"
+atoms: active
 ```
 
 输出：
@@ -966,7 +1378,26 @@ D:\code\nebresult\dimer_guess_001_002\dimer_vector.inc
 --scale X                  归一化后缩放
 ```
 
-### 6.1 多个 DIMER 初猜
+YAML 字段和命令行选项基本一一对应：
+
+```text
+source              已有 NEB image 目录
+between             [LEFT, RIGHT]，0-based image index
+fraction/fractions  单个或多个插值比例
+prefix/suffix       输入 image 文件命名
+output_dir          输出目录
+structure_name      单 fraction 时的结构文件名
+vector_name         单 fraction 时的 DIMER_VECTOR 文件名
+format              ASE 写出格式
+atoms               active / all / 原子列表
+active_atoms        atoms: active 时使用的原子列表
+frozen_atoms        需要从向量中剔除的原子
+zero_frozen_atoms   是否剔除 frozen_atoms
+normalize           是否归一化向量
+scale               归一化后缩放
+```
+
+### 7.1 多个 DIMER 初猜
 
 ```powershell
 neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.25 --fraction 0.5 --fraction 0.75
@@ -974,19 +1405,44 @@ neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.25 --frac
 
 输出文件名会带 fraction tag，避免覆盖。
 
-### 6.2 只保留反应中心
+### 7.2 只保留反应中心
 
 ```powershell
 neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5 --active-atoms "10,12,13,48" --atoms active
 ```
 
-### 6.3 保留所有原子
+### 7.3 保留所有原子
 
 ```powershell
 neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5 --atoms all
 ```
 
-## 7. slice 命令：裁剪和重采样已有路径
+### 7.4 Python API
+
+直接传参数：
+
+```python
+from neb_helper import generate_dimer_guess
+
+result = generate_dimer_guess(
+    source=r"D:\code\nebresult",
+    left_index=1,
+    right_index=2,
+    fractions=(0.5,),
+    active_atoms=[10, 12, 13, 48],
+    atoms="active",
+)
+```
+
+读取 YAML：
+
+```python
+from neb_helper import generate_dimer_guess_from_config
+
+result = generate_dimer_guess_from_config(r"D:\path\to\dimer_guess.yaml")
+```
+
+## 8. slice 命令：裁剪和重采样已有路径
 
 `slice` 直接读取已有 `image_*.xyz`，输出新的重编号 band。
 
@@ -1022,13 +1478,13 @@ slice_000_003\source_map.csv
 --source-map NAME          source map 文件名；空字符串禁用
 ```
 
-### 7.1 裁剪 0-3
+### 8.1 裁剪 0-3
 
 ```powershell
 neb-helper slice --source D:\code\nebresult --range 0 3
 ```
 
-### 7.2 把 0-3 重采样为 7 个中间 image
+### 8.2 把 0-3 重采样为 7 个中间 image
 
 ```powershell
 neb-helper slice --source D:\code\nebresult --range 0 3 --resample-n-images 7
@@ -1036,13 +1492,13 @@ neb-helper slice --source D:\code\nebresult --range 0 3 --resample-n-images 7
 
 总输出 image 数是 `7 + 2 = 9`。
 
-### 7.3 反向路径
+### 8.3 反向路径
 
 ```powershell
 neb-helper slice --source D:\code\nebresult --range 3 0
 ```
 
-## 8. 当前质子转移案例如何使用
+## 9. 当前质子转移案例如何使用
 
 如果你判断：
 
@@ -1053,7 +1509,29 @@ neb-helper slice --source D:\code\nebresult --range 3 0
 
 可选路线：
 
-### 8.1 DIMER 路线
+### 9.1 IS/FS 端点路线：tsguess
+
+如果你已经有可靠的 reactant/product 端点，且知道质子转移相关的 donor/acceptor/H 原子编号，可以先用 `tsguess` 生成候选 TS 结构和 DIMER_VECTOR：
+
+```powershell
+neb-helper tsguess proton_transfer_tsguess.yaml
+```
+
+假设 donor 是 42，H 是 43，acceptor 是 88，YAML 中的 `reaction_coordinates` 可以先写成：
+
+```yaml
+reaction_coordinates:
+  forming_bonds:
+    - [43, 88]
+  weakening_bonds:
+    - [42, 43]
+  monitor_bonds:
+    - [42, 88]
+```
+
+实际 YAML 里要换成你的体系编号。当前版本还不支持符号名或 CV 表达式，仍然是 bond distance 列表。
+
+### 9.2 已有 NEB 路线：DIMER
 
 ```powershell
 neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5 --active-atoms "你的反应中心原子" --atoms active
@@ -1061,7 +1539,7 @@ neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5 --activ
 
 再用 `ts_guess.xyz` 和 `dimer_vector.inc` 准备 CP2K DIMER。
 
-### 8.2 NEB 裁剪路线
+### 9.3 NEB 裁剪路线
 
 ```powershell
 neb-helper slice --source D:\code\nebresult --range 0 3
@@ -1075,9 +1553,9 @@ neb-helper slice --source D:\code\nebresult --range 0 3 --resample-n-images 7
 
 然后你可以考虑把 `image_003` 附近做几何优化和频率确认，再把确认后的结构作为新的 product 端点。
 
-## 9. 常见错误和处理
+## 10. 常见错误和处理
 
-### 9.1 找不到 image 文件
+### 10.1 找不到 image 文件
 
 检查命名是否是：
 
@@ -1092,11 +1570,11 @@ image_001.xyz
 --prefix your_prefix --suffix your_suffix
 ```
 
-### 9.2 原子数或顺序不一致
+### 10.2 原子数或顺序不一致
 
 `make` 里用 `endpoint_reorder` 解决端点顺序问题。`dimer` / `slice` 要求已有 image 已经是一条兼容路径，不能自动重排中间 image。
 
-### 9.3 MACE / DeepMD 导入失败
+### 10.3 MACE / DeepMD 导入失败
 
 说明当前 Python 环境没有装对应包，或 CUDA/依赖不匹配。先确认：
 
@@ -1105,7 +1583,7 @@ python -c "import mace"
 python -c "import deepmd"
 ```
 
-### 9.4 GPU 显存不足
+### 10.4 GPU 显存不足
 
 对 `neb_relax` 调小：
 
@@ -1127,7 +1605,7 @@ force_evaluator: ase
 
 牺牲速度换稳定性。
 
-### 9.5 DIMER_VECTOR 是零向量
+### 10.5 DIMER_VECTOR 是零向量
 
 可能是：
 
@@ -1146,9 +1624,9 @@ frozen_atoms 把所有 selected atoms 都置零了
 
 确认不是结构本身问题。
 
-## 10. 现在暂缓的功能
+## 11. 现在暂缓的功能
 
-暂时不把 `analyze` 和 `endpoint` 做成正式命令。原因是它们需要把化学判断编码进工具，例如：
+暂时不把更高阶的自动化 endpoint / CV 诊断做成正式命令。原因是这些功能需要把化学判断编码进工具，例如：
 
 ```text
 哪些键长代表反应进程

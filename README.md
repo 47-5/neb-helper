@@ -5,7 +5,7 @@
 The package has two intended layers:
 
 - `neb_helper.make`: build CP2K-oriented NEB paths from initial/final structures. This is the current `nebmake_v2` implementation.
-- `neb_helper.result`: analyze existing NEB results and derive follow-up workflows once a first-pass band has revealed useful prior knowledge.
+- `neb_helper.result`: analyze existing NEB results and derive follow-up workflows from existing bands or endpoint-derived TS guesses.
 
 ## Documentation
 
@@ -48,7 +48,7 @@ The importable API is also collected under `neb_helper.api`:
 from neb_helper.api import load_config, make_neb_path, generate_ts_guess
 ```
 
-See `examples/python_api/` for runnable script templates.
+See `examples/python_api/` for runnable script templates, including `ts_guess.py` for `generate_ts_guess`.
 
 ## Build a NEB Path
 
@@ -204,7 +204,7 @@ dimer_vector:
   remove_translation: active
 ```
 
-See `docs/tsguess_zh.md` and `examples/tsguess/sc_dmf_c2h4.yaml` for a complete template.
+See `docs/tsguess_zh.md` and `examples/tsguess/sc_dmf_c2h4.yaml` for a complete template. The Sc/u-Sc CIF files are not bundled; replace `initial` / `final` or place your local endpoint CIFs next to the YAML before running it.
 
 ## Slice an Existing Band
 
