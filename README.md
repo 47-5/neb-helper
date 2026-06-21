@@ -11,6 +11,7 @@ The package has two intended layers:
 
 - [中文快速教程](docs/quickstart_zh.md)
 - [中文完整功能手册](docs/user_guide_zh.md)
+- [TS/DIMER 初猜工作流](docs/tsguess_zh.md)
 
 ## Install
 
@@ -31,7 +32,7 @@ pip install -e .
 The same workflows can be used from scripts, notebooks, or IDE run configurations:
 
 ```python
-from neb_helper import analyze_neb, generate_dimer_guess, slice_band
+from neb_helper import analyze_neb, generate_dimer_guess, generate_ts_guess, slice_band
 
 _, summary = analyze_neb(
     input_path=r"D:\code\nebresult\example1",
@@ -44,7 +45,7 @@ print(summary.forward_barrier)
 The importable API is also collected under `neb_helper.api`:
 
 ```python
-from neb_helper.api import load_config, make_neb_path
+from neb_helper.api import load_config, make_neb_path, generate_ts_guess
 ```
 
 See `examples/python_api/` for runnable script templates.
@@ -107,6 +108,23 @@ Generate a TS guess halfway between two existing NEB images and write a CP2K `&D
 neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5
 ```
 
+The same operation can be configured with YAML to avoid long command lines:
+
+```powershell
+neb-helper dimer examples\dimer\dimer_guess.yaml
+```
+
+Minimal config:
+
+```yaml
+source: ./neb_path
+between: [1, 2]
+fraction: 0.5
+atom_indices_1_based: true
+active_atoms: "577-598"
+atoms: active
+```
+
 By default this reads files named `image_000.xyz`, `image_001.xyz`, ... and writes to:
 
 ```text
@@ -138,6 +156,55 @@ Useful options:
 --atom-indices-1-based      Interpret atom selections as 1-based.
 --no-normalize              Keep the raw selected pair displacement.
 ```
+
+## Generate TS/DIMER Guesses from IS/FS Endpoints
+
+Generate a set of TS candidate structures directly from an IS/FS pair and optionally write a CP2K `&DIMER_VECTOR` block:
+
+```powershell
+neb-helper tsguess examples\tsguess\sc_dmf_c2h4.yaml
+```
+
+This workflow is intended for cases where a direct Cartesian interpolation creates bad bonds, or where strong metal/acid-site anchoring pulls a DIMER search back to the initial state. It can:
+
+- move only a selected active region while keeping the background framework close to IS or FS;
+- clean the active region with an IDPP-like internal-distance objective;
+- score candidates by forming/weakening/monitor bond distances;
+- recommend one candidate fraction;
+- generate a local-tangent DIMER vector such as `t78 - t70`;
+- write `minus-center-plus.xyz` for visual direction checking.
+
+Typical Sc/u-Sc config fields:
+
+```yaml
+initial: Sc_DMF_C2H4_IS-1.cif
+final: Sc_DMF_C2H4_FS-1.cif
+atom_indices_1_based: true
+active_atoms: "577-598"
+
+path:
+  method: active_idpp
+  base: initial
+  fractions: [0.70, 0.75, 0.78, 0.80]
+
+reaction_coordinates:
+  forming_bonds:
+    - [578, 594]
+    - [581, 593]
+  weakening_bonds:
+    - [577, 582]
+  monitor_bonds:
+    - [593, 594]
+
+dimer_vector:
+  enabled: true
+  source: local_tangent
+  tangent_fractions: [0.70, 0.78]
+  atoms: active
+  remove_translation: active
+```
+
+See `docs/tsguess_zh.md` and `examples/tsguess/sc_dmf_c2h4.yaml` for a complete template.
 
 ## Slice an Existing Band
 

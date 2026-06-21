@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local workspace files
+.idea/
+neb_helper_tsguess_overlay/
+
+# Generated workflow outputs
+examples/TS8-1/
+examples/dimer/dimer_guess_*/
+examples/tsguess/*.cif
+examples/tsguess/tsguess_outputs/

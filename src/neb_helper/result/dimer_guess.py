@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Optional, Union
 
 import numpy as np
 from ase.io import write
@@ -32,19 +34,86 @@ class DimerGuessResult:
     files: list[DimerGuessFile]
 
 
+@dataclass(frozen=True)
+class DimerGuessConfig:
+    source: Path
+    left_index: int
+    right_index: int
+    fractions: list[float]
+    prefix: str = "image"
+    suffix: str = ".xyz"
+    output_dir: Optional[Path] = None
+    structure_name: Optional[str] = None
+    vector_name: Optional[str] = None
+    structure_format: str = "xyz"
+    atoms: Optional[Union[str, list[int]]] = "active"
+    active_atoms: list[int] = field(default_factory=list)
+    frozen_atoms: list[int] = field(default_factory=list)
+    zero_frozen_atoms: bool = True
+    normalize: bool = True
+    scale: float = 1.0
+
+
+def load_dimer_guess_config(path: Union[str, Path]) -> DimerGuessConfig:
+    path = Path(path)
+    data = _load_mapping(path)
+    return dimer_guess_config_from_mapping(data, base_dir=path.parent)
+
+
+def dimer_guess_config_from_mapping(data: Mapping[str, Any], base_dir: Union[str, Path] = ".") -> DimerGuessConfig:
+    base_dir = Path(base_dir)
+    one_based = _atom_indices_1_based_from_mapping(data)
+    if "between" not in data:
+        raise ValueError("DIMER config must define between: [LEFT, RIGHT].")
+    between = list(data["between"])
+    if len(between) != 2:
+        raise ValueError("DIMER config field between must contain exactly two image indices.")
+
+    fractions_value = data.get("fractions", data.get("fraction", [0.5]))
+    fractions = _normalize_fractions(_as_list(fractions_value))
+    source = _resolve_path(data.get("source", "."), base_dir)
+    output_dir = data.get("output_dir")
+    structure_format = data.get("structure_format", data.get("format", "xyz"))
+
+    return DimerGuessConfig(
+        source=source,
+        left_index=int(between[0]),
+        right_index=int(between[1]),
+        fractions=fractions,
+        prefix=str(data.get("prefix", "image")),
+        suffix=str(data.get("suffix", ".xyz")),
+        output_dir=_resolve_path(output_dir, base_dir) if output_dir else None,
+        structure_name=data.get("structure_name"),
+        vector_name=data.get("vector_name"),
+        structure_format=str(structure_format),
+        atoms=parse_atom_selector(
+            data.get("atoms", "active"), one_based=one_based, field_name="atoms"
+        ),
+        active_atoms=parse_atom_indices(
+            data.get("active_atoms", []), one_based=one_based, field_name="active_atoms"
+        ),
+        frozen_atoms=parse_atom_indices(
+            data.get("frozen_atoms", []), one_based=one_based, field_name="frozen_atoms"
+        ),
+        zero_frozen_atoms=_parse_bool(data.get("zero_frozen_atoms", True), "zero_frozen_atoms"),
+        normalize=_parse_bool(data.get("normalize", True), "normalize"),
+        scale=float(data.get("scale", 1.0)),
+    )
+
+
 def generate_dimer_guess(
     *,
-    source: str | Path,
+    source: Union[str, Path],
     left_index: int,
     right_index: int,
     fractions: Sequence[float] = (0.5,),
     prefix: str = "image",
     suffix: str = ".xyz",
-    output_dir: str | Path | None = None,
-    structure_name: str | None = None,
-    vector_name: str | None = None,
+    output_dir: Optional[Union[str, Path]] = None,
+    structure_name: Optional[str] = None,
+    vector_name: Optional[str] = None,
     structure_format: str = "xyz",
-    atoms: str | Sequence[int] | None = "active",
+    atoms: Optional[Union[str, Sequence[int]]] = "active",
     active_atoms: Sequence[int] = (),
     frozen_atoms: Sequence[int] = (),
     zero_frozen_atoms: bool = True,
@@ -139,6 +208,29 @@ def generate_dimer_guess(
     )
 
 
+def generate_dimer_guess_from_config(config: Union[DimerGuessConfig, str, Path]) -> DimerGuessResult:
+    if isinstance(config, (str, Path)):
+        config = load_dimer_guess_config(config)
+    return generate_dimer_guess(
+        source=config.source,
+        left_index=config.left_index,
+        right_index=config.right_index,
+        fractions=config.fractions,
+        prefix=config.prefix,
+        suffix=config.suffix,
+        output_dir=config.output_dir,
+        structure_name=config.structure_name,
+        vector_name=config.vector_name,
+        structure_format=config.structure_format,
+        atoms=config.atoms,
+        active_atoms=config.active_atoms,
+        frozen_atoms=config.frozen_atoms,
+        zero_frozen_atoms=config.zero_frozen_atoms,
+        normalize=config.normalize,
+        scale=config.scale,
+    )
+
+
 def interpolate_pair(left, right, fraction: float):
     if fraction < 0.0 or fraction > 1.0:
         raise ValueError(f"DIMER guess fraction must be in [0, 1], got {fraction}.")
@@ -150,40 +242,45 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    atoms = parse_atom_selector(
-        args.atoms,
-        one_based=args.atom_indices_1_based,
-        field_name="--atoms",
-    )
-    active_atoms = parse_atom_indices(
-        args.active_atoms,
-        one_based=args.atom_indices_1_based,
-        field_name="--active-atoms",
-    )
-    frozen_atoms = parse_atom_indices(
-        args.frozen_atoms,
-        one_based=args.atom_indices_1_based,
-        field_name="--frozen-atoms",
-    )
+    if args.config:
+        result = generate_dimer_guess_from_config(args.config)
+    else:
+        if args.between is None:
+            parser.error("--between LEFT RIGHT is required unless a YAML/JSON config file is provided.")
+        atoms = parse_atom_selector(
+            args.atoms,
+            one_based=args.atom_indices_1_based,
+            field_name="--atoms",
+        )
+        active_atoms = parse_atom_indices(
+            args.active_atoms,
+            one_based=args.atom_indices_1_based,
+            field_name="--active-atoms",
+        )
+        frozen_atoms = parse_atom_indices(
+            args.frozen_atoms,
+            one_based=args.atom_indices_1_based,
+            field_name="--frozen-atoms",
+        )
 
-    result = generate_dimer_guess(
-        source=args.source,
-        left_index=args.between[0],
-        right_index=args.between[1],
-        fractions=args.fractions or [0.5],
-        prefix=args.prefix,
-        suffix=args.suffix,
-        output_dir=args.output_dir,
-        structure_name=args.structure_name,
-        vector_name=args.vector_name,
-        structure_format=args.structure_format,
-        atoms=atoms,
-        active_atoms=active_atoms,
-        frozen_atoms=frozen_atoms,
-        zero_frozen_atoms=args.zero_frozen_atoms,
-        normalize=args.normalize,
-        scale=args.scale,
-    )
+        result = generate_dimer_guess(
+            source=args.source,
+            left_index=args.between[0],
+            right_index=args.between[1],
+            fractions=args.fractions or [0.5],
+            prefix=args.prefix,
+            suffix=args.suffix,
+            output_dir=args.output_dir,
+            structure_name=args.structure_name,
+            vector_name=args.vector_name,
+            structure_format=args.structure_format,
+            atoms=atoms,
+            active_atoms=active_atoms,
+            frozen_atoms=frozen_atoms,
+            zero_frozen_atoms=args.zero_frozen_atoms,
+            normalize=args.normalize,
+            scale=args.scale,
+        )
 
     print(
         f"Wrote {len(result.files)} DIMER guess(es) from "
@@ -204,6 +301,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="neb-helper dimer",
         description="Generate DIMER initial structures and CP2K DIMER_VECTOR blocks from an existing NEB image pair.",
     )
+    parser.add_argument("config", nargs="?", help="Optional YAML/JSON config file. CLI flags are used when omitted.")
     parser.add_argument("--source", default=".", help="Directory containing image_000.xyz-style files.")
     parser.add_argument("--prefix", default="image", help="Image filename prefix before the numeric index.")
     parser.add_argument("--suffix", default=".xyz", help="Image filename suffix, with or without the leading dot.")
@@ -212,7 +310,6 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs=2,
         type=int,
         metavar=("LEFT", "RIGHT"),
-        required=True,
         help="0-based image indices defining the DIMER direction LEFT -> RIGHT.",
     )
     parser.add_argument(
@@ -273,8 +370,8 @@ def _output_paths(
     *,
     fraction: float,
     n_fractions: int,
-    structure_name: str | None,
-    vector_name: str | None,
+    structure_name: Optional[str],
+    vector_name: Optional[str],
 ) -> tuple[Path, Path]:
     if n_fractions == 1:
         return (
@@ -287,6 +384,56 @@ def _output_paths(
 
 def _fraction_tag(fraction: float) -> str:
     return f"f{fraction:.3f}".replace(".", "p")
+
+
+def _load_mapping(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".json":
+        return json.loads(text)
+    try:
+        import yaml
+    except ImportError as exc:
+        raise RuntimeError("YAML config needs PyYAML. Use a .json config or install PyYAML.") from exc
+    data = yaml.safe_load(text)
+    if not isinstance(data, dict):
+        raise ValueError(f"Config file must contain a mapping: {path}")
+    return data
+
+
+def _resolve_path(value: Union[str, Path], base_dir: Path) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return (base_dir / path).resolve()
+
+
+def _as_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return [value]
+
+
+def _atom_indices_1_based_from_mapping(data: Mapping[str, Any]) -> bool:
+    for key in ("atom_indices_1_based", "atoms_1_based", "one_based", "1_based"):
+        if key in data:
+            return _parse_bool(data[key], key)
+    return False
+
+
+def _parse_bool(value: Any, field_name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "yes", "1", "on"}:
+            return True
+        if lowered in {"false", "no", "0", "off", ""}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    raise ValueError(f"{field_name} must be a boolean value, got {value!r}.")
 
 
 if __name__ == "__main__":

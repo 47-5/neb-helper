@@ -1,0 +1,17 @@
+# Equivalent to:
+# neb-helper dimer --source ./neb_path --between 1 2 --fraction 0.5 --active-atoms "577-598" --atoms active --atom-indices-1-based
+
+source: ./neb_path
+between: [1, 2]
+fraction: 0.5
+
+atom_indices_1_based: true
+active_atoms: "577-598"
+atoms: active
+
+prefix: image
+suffix: .xyz
+output_dir: ./dimer_guess_001_002
+format: xyz
+normalize: true
+scale: 1.0

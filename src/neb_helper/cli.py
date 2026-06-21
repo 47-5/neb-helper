@@ -7,7 +7,7 @@ from typing import Sequence
 from . import __version__
 
 
-_COMMANDS = {"make", "analyze", "dimer", "slice"}
+_COMMANDS = {"make", "analyze", "dimer", "slice", "tsguess"}
 _TOP_LEVEL_OPTIONS = {"-h", "--help", "--version"}
 
 
@@ -41,6 +41,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .result.slice_band import main as slice_main
 
         return slice_main(remaining)
+
+    if namespace.command == "tsguess":
+        from .result.ts_guess import main as ts_guess_main
+
+        return ts_guess_main(remaining)
 
     parser.print_help()
     return 0
@@ -85,6 +90,11 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "slice",
         help="Crop and optionally resample a segment of an existing NEB band.",
+        add_help=False,
+    )
+    subparsers.add_parser(
+        "tsguess",
+        help="Generate TS candidates and optional DIMER_VECTOR from IS/FS endpoints.",
         add_help=False,
     )
     return parser
