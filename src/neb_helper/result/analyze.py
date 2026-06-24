@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import glob
+import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Any, List, Optional, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,6 +14,7 @@ import numpy as np
 
 HARTREE_TO_EV = 27.211386245988
 OUTPUT_XYZ_NAMES = {"neb_traj.xyz", "opted_neb_traj.xyz"}
+CONFIG_SUFFIXES = {".yaml", ".yml", ".json"}
 
 
 def natural_sort_key(value: str | Path) -> list[object]:
@@ -70,6 +73,31 @@ class BarrierSummary:
     reaction_energy: float
     peak_index: int
     peak_energy: float
+
+
+@dataclass(frozen=True)
+class AnalyzeConfig:
+    input_path: Path = Path(".")
+    energy_file: Optional[Path] = None
+    traj_file: Optional[Path] = None
+    restart_file: Optional[Path] = None
+    xyz_glob: Optional[str] = None
+    image_count: Optional[int] = None
+    line_index: int = -1
+    xyz_index: str | int = "-1"
+    images_per_band: Optional[int] = None
+    band_index: int = -1
+    energy_unit: str = "hartree"
+    relative: bool = True
+    mic: bool = True
+    smooth: bool = True
+    output_image: Optional[Path] = None
+    dpi: int = 600
+    font: str = "Times New Roman"
+    write_summary_file: bool = True
+    summary_path: Optional[Path] = None
+    write_xyz_file: bool = False
+    xyz_output_path: Path = Path("neb_traj.xyz")
 
 
 def path_from_distances(energies: Sequence[float], distances: Sequence[float] | None) -> np.ndarray:
@@ -495,7 +523,7 @@ def load_from_ener_xyz(
             images = read_cp2k_restart_images(restart_path)
             structure_source = restart_path
         else:
-            pattern = xyz_glob or str(directory_path / "*Replica*.xyz")
+            pattern = _resolve_xyz_glob(xyz_glob, directory_path) or str(directory_path / "*Replica*.xyz")
             if not glob.glob(pattern):
                 pattern = str(directory_path / "*.xyz")
             if glob.glob(pattern):
@@ -857,6 +885,190 @@ def default_output_path(input_path: Path, output: str | None) -> Path:
     return input_path.with_name("neb_result.png")
 
 
+def load_analyze_config(path: str | Path) -> AnalyzeConfig:
+    path = Path(path)
+    data = _load_mapping(path)
+    return analyze_config_from_mapping(data, base_dir=path.parent)
+
+
+def analyze_config_from_mapping(data: Mapping[str, Any], base_dir: str | Path = ".") -> AnalyzeConfig:
+    base_dir = Path(base_dir)
+    input_data = _mapping_section(data, "input")
+    plot_data = _mapping_section(data, "plot")
+    output_data = _mapping_section(data, "output", "outputs")
+
+    input_path_value = _get_config_value(
+        ("path", "input_path", "source", "result_dir", "directory"),
+        input_data,
+        data,
+        default=".",
+    )
+    output_image = _get_config_value(("image", "output_image"), output_data, data)
+    summary_path = _get_config_value(("summary", "summary_path"), output_data, data)
+    xyz_output_path = _get_config_value(("xyz", "xyz_output", "xyz_output_path"), output_data, data)
+
+    return AnalyzeConfig(
+        input_path=_resolve_path(input_path_value, base_dir),
+        energy_file=_resolve_optional_path(
+            _get_config_value(("energy_file", "energy"), input_data, data),
+            base_dir,
+        ),
+        traj_file=_resolve_optional_path(
+            _get_config_value(("traj_file", "trajectory"), input_data, data),
+            base_dir,
+        ),
+        restart_file=_resolve_optional_path(
+            _get_config_value(("restart_file", "restart"), input_data, data),
+            base_dir,
+        ),
+        xyz_glob=_optional_str(_get_config_value(("xyz_glob", "xyz_pattern"), input_data, data)),
+        image_count=_optional_int(_get_config_value(("image_count", "images"), input_data, data), "image_count"),
+        line_index=int(_get_config_value(("line_index",), input_data, data, default=-1)),
+        xyz_index=_get_config_value(("xyz_index",), input_data, data, default="-1"),
+        images_per_band=_optional_int(
+            _get_config_value(("images_per_band",), input_data, data),
+            "images_per_band",
+        ),
+        band_index=int(_get_config_value(("band_index",), input_data, data, default=-1)),
+        energy_unit=str(_get_config_value(("energy_unit",), input_data, data, default="hartree")),
+        relative=_parse_bool(_get_config_value(("relative",), input_data, data, default=True), "relative"),
+        mic=_parse_bool(_get_config_value(("mic",), input_data, data, default=True), "mic"),
+        smooth=_parse_bool(_get_config_value(("smooth",), plot_data, data, default=True), "smooth"),
+        output_image=_resolve_optional_path(output_image, base_dir),
+        dpi=int(_get_config_value(("dpi",), plot_data, data, default=600)),
+        font=str(_get_config_value(("font",), plot_data, data, default="Times New Roman")),
+        write_summary_file=_parse_bool(
+            _get_config_value(("write_summary", "write_summary_file"), output_data, data, default=True),
+            "write_summary",
+        ),
+        summary_path=_resolve_optional_path(summary_path, base_dir),
+        write_xyz_file=_parse_bool(
+            _get_config_value(("write_xyz", "write_xyz_file"), output_data, data, default=False),
+            "write_xyz",
+        ),
+        xyz_output_path=_resolve_path(xyz_output_path, base_dir) if xyz_output_path is not None else Path("neb_traj.xyz"),
+    )
+
+
+def analyze_neb_from_config(config: AnalyzeConfig | str | Path) -> tuple[NEBData, BarrierSummary]:
+    if isinstance(config, (str, Path)):
+        config = load_analyze_config(config)
+    return analyze_neb(
+        input_path=config.input_path,
+        energy_file=config.energy_file,
+        traj_file=config.traj_file,
+        restart_file=config.restart_file,
+        xyz_glob=config.xyz_glob,
+        image_count=config.image_count,
+        line_index=config.line_index,
+        xyz_index=config.xyz_index,
+        images_per_band=config.images_per_band,
+        band_index=config.band_index,
+        energy_unit=config.energy_unit,
+        relative=config.relative,
+        mic=config.mic,
+        smooth=config.smooth,
+        output_image=config.output_image,
+        dpi=config.dpi,
+        font=config.font,
+        write_summary_file=config.write_summary_file,
+        summary_path=config.summary_path,
+        write_xyz_file=config.write_xyz_file,
+        xyz_output_path=config.xyz_output_path,
+    )
+
+
+def _load_mapping(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() == ".json":
+        data = json.loads(text)
+    else:
+        try:
+            import yaml
+        except ImportError as exc:
+            raise RuntimeError("YAML config needs PyYAML. Use a .json config or install PyYAML.") from exc
+        data = yaml.safe_load(text)
+    if not isinstance(data, dict):
+        raise ValueError(f"Config file must contain a mapping: {path}")
+    return data
+
+
+def _mapping_section(data: Mapping[str, Any], *keys: str) -> Mapping[str, Any]:
+    for key in keys:
+        if key not in data:
+            continue
+        value = data[key]
+        if value is None:
+            return {}
+        if not isinstance(value, Mapping):
+            raise ValueError(f"{key} must be a mapping when provided.")
+        return value
+    return {}
+
+
+def _get_config_value(keys: Sequence[str], *sections: Mapping[str, Any], default: Any = None) -> Any:
+    for section in sections:
+        for key in keys:
+            if key in section:
+                return section[key]
+    return default
+
+
+def _resolve_path(value: Any, base_dir: Path) -> Path:
+    path = Path(str(value))
+    if path.is_absolute():
+        return path
+    return (base_dir / path).resolve()
+
+
+def _resolve_optional_path(value: Any, base_dir: Path) -> Optional[Path]:
+    if value is None or value == "":
+        return None
+    return _resolve_path(value, base_dir)
+
+
+def _optional_str(value: Any) -> Optional[str]:
+    if value is None or value == "":
+        return None
+    return str(value)
+
+
+def _optional_int(value: Any, field_name: str) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be an integer, got {value!r}.") from exc
+
+
+def _parse_bool(value: Any, field_name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "yes", "1", "on"}:
+            return True
+        if lowered in {"false", "no", "0", "off", ""}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    raise ValueError(f"{field_name} must be a boolean value, got {value!r}.")
+
+
+def _resolve_xyz_glob(xyz_glob: str | None, directory_path: Path) -> str | None:
+    if xyz_glob is None:
+        return None
+    pattern_path = Path(xyz_glob)
+    if pattern_path.is_absolute():
+        return str(pattern_path)
+    return str(directory_path / pattern_path)
+
+
+def _is_config_path(path: str | Path) -> bool:
+    return Path(path).suffix.lower() in CONFIG_SUFFIXES
+
+
 def load_input(
     input_path: str | Path = ".",
     energy_file: str | Path | None = None,
@@ -996,6 +1208,7 @@ def analyze_neb(
 
     if write_summary_file:
         resolved_summary_path = Path(summary_path) if summary_path is not None else output_path.with_name("result.txt")
+        resolved_summary_path.parent.mkdir(parents=True, exist_ok=True)
         write_summary(resolved_summary_path, data, summary)
         print(f"Summary: {resolved_summary_path}")
 
@@ -1003,6 +1216,7 @@ def analyze_neb(
         resolved_xyz_output = Path(xyz_output_path)
         if not resolved_xyz_output.is_absolute():
             resolved_xyz_output = output_path.with_name(str(xyz_output_path))
+        resolved_xyz_output.parent.mkdir(parents=True, exist_ok=True)
         write_images(resolved_xyz_output, data.images)
         print(f"Trajectory: {resolved_xyz_output}")
 
@@ -1130,7 +1344,11 @@ def build_arg_parser() -> "argparse.ArgumentParser":
         "input_path",
         nargs="?",
         default=".",
-        help="Result directory, .ener file, .traj file, or .restart file. Default: current directory.",
+        help="Result directory, .ener file, .traj file, .restart file, or YAML/JSON config. Default: current directory.",
+    )
+    parser.add_argument(
+        "--config",
+        help="YAML/JSON config file. When provided, the config drives the analysis.",
     )
     parser.add_argument("--energy-file", help="Explicit CP2K .ener file.")
     parser.add_argument("--traj-file", help="Explicit ASE .traj file.")
@@ -1165,6 +1383,10 @@ def build_arg_parser() -> "argparse.ArgumentParser":
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+    if args.config or _is_config_path(args.input_path):
+        analyze_neb_from_config(args.config or args.input_path)
+        return 0
+
     analyze_neb(
         input_path=args.input_path,
         energy_file=args.energy_file,

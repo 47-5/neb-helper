@@ -1,0 +1,347 @@
+# neb-helper make teaching config
+#
+# This is a complete field reference, not a self-contained runnable example.
+# Before using it, replace at least:
+#   - initial and final
+#   - active_atoms and frozen_atoms
+#   - any waypoint/torsion atom indices
+#   - MLFF calculator type/model/head/device/dtype
+#   - output.directory if you do not want to write into v2_output
+#
+# Run:
+#   neb-helper make examples\make\nebmake_v2_example_en.yaml
+#
+# Important conventions:
+#   1. Atom indices are Python/ASE-style 0-based by default.
+#      Atom 1 is written as 0, atom 2 as 1, and so on.
+#   2. initial and final must have the same atom count, element order, cell, and PBC.
+#      If only atom order is inconsistent, enable endpoint_reorder.
+#   3. v2 keeps the old conservative PBC behavior: it preserves path continuity and
+#      does not wrap output coordinates back into the main cell unless requested.
+#   4. YAML requires PyYAML in the active Python environment. JSON configs also work.
+
+# Initial endpoint structure. ASE-readable formats such as cif, xyz, POSCAR,
+# and traj are usually supported.
+initial: 1GaOH_and_H2O-1.cif
+
+# Final endpoint structure. Atom order must match initial unless endpoint_reorder
+# is enabled.
+final: 1GaOHH2O-1.cif
+
+endpoint_reorder:
+  # Enable automatic endpoint atom-order correction.
+  enabled: false
+
+  # final_by_initial: reorder final to match initial. This is the common choice.
+  # initial_by_final: reorder initial to match final.
+  mode: final_by_initial
+
+  # Optional reordered endpoint output. Leave empty to use the reordered structure
+  # only in memory.
+  output: v2_output/1GaOH-1_reordered_by_GaO_and_HBAS.cif
+
+  # Optional atom mapping CSV: reference_index,target_index,symbol,distance_A.
+  mapping: v2_output/1GaOH-1_reordered_by_GaO_and_HBAS_mapping.csv
+
+  # Fixed-cell NEB usually wants the reference cell/PBC copied to the target.
+  copy_reference_cell: true
+
+  # Safety threshold in Angstrom. Leave empty to only report max/RMS distances.
+  max_distance:
+
+  # ASE output format for endpoint_reorder.output. Empty means infer from suffix.
+  output_format:
+
+# Number of intermediate images, excluding endpoints.
+# n_images: 5 writes image_000 through image_006, seven structures total.
+n_images: 5
+
+# Atom index convention for active_atoms, frozen_atoms, torsions, dimer_vector, etc.
+# false: Python/ASE 0-based indices.
+# true: 1-based indices copied from visualization tools.
+atom_indices_1_based: false
+
+# Reaction-center atoms.
+# Common uses:
+#   - waypoint mode moves these atoms according to manual intermediate structures.
+#   - relax.freeze_active: true keeps them fixed while the environment responds.
+# Example: active_atoms: [10, 12, 13, 48]
+active_atoms: []
+
+# Permanently frozen atoms, usually slab bottom layers or distant framework atoms.
+# Example: frozen_atoms: [0, 1, 2, 3, 4]
+frozen_atoms: []
+
+background:
+  # Background path builder. mic_linear uses minimum-image Cartesian interpolation.
+  method: mic_linear
+
+  # Run ASE IDPP on the background path before waypoint/torsion controls overwrite
+  # selected reaction-center coordinates.
+  idpp: true
+
+# Manual intermediate structures.
+# Design goal: you can manually place only the important atoms instead of a whole
+# slab or zeolite framework.
+#
+# active_atoms_only: true
+#   The waypoint file may contain only active_atoms, in the same order as active_atoms.
+#   A full structure is also accepted; the code extracts active_atoms from it.
+#
+# active_atoms_only: false
+#   Treat the waypoint as a full-structure control point.
+#
+# image and fraction are alternatives:
+#   image: 3      place this waypoint at image_003
+#   fraction: 0.5 place this waypoint halfway along the path
+waypoints: []
+
+# Example:
+# waypoints:
+#   - file: mid_active_atoms.xyz
+#     fraction: 0.5
+#     active_atoms_only: true
+#   - file: mid_2.xyz
+#     image: 4
+#     active_atoms_only: true
+
+# Single-bond rotation / dihedral control.
+# This is intended for torsional transition paths where Cartesian interpolation is
+# less physical.
+torsions: []
+
+# Example:
+# torsions:
+#   - name: rotate_fragment
+#     dihedral: [10, 12, 13, 48]
+#     rotating_group: [48, 49]
+#     start_deg: 30.0
+#     end_deg: 170.0
+#     apply_endpoints: false
+
+relax:
+  # Short independent pre-relaxation for intermediate images.
+  # This is useful for letting a framework or surface respond locally before NEB.
+  enabled: false
+
+  calculator:
+    # Calculator type: none / dp / deepmd / mace / emt / lj.
+    # emt/lj are for code-path testing, not realistic chemistry.
+    type: none
+
+    # DP/MACE model path or MACE foundation model name.
+    model:
+
+    # Multi-head model head name, if needed.
+    head:
+
+    # MACE device, for example cuda or cpu.
+    device:
+
+    # MACE dtype, for example float64 or float32.
+    dtype:
+
+    # Extra keyword arguments passed to the backend calculator.
+    kwargs: {}
+
+  # Maximum optimizer steps per image.
+  steps: 100
+
+  # Force convergence threshold, usually eV/A.
+  fmax: 0.1
+
+  # Maximum optimizer step length.
+  maxstep: 0.05
+
+  # Supported optimizers: BFGS and FIRE.
+  optimizer: BFGS
+
+  # Usually false: endpoints should already be optimized.
+  relax_endpoints: false
+
+  # true: keep active/torsion atoms fixed and relax only the environment.
+  freeze_active: true
+
+  # Per-image logs/trajectories. Empty means do not write.
+  logfile:
+  trajectory:
+
+  # Show ASE optimizer table on screen.
+  log_to_screen: true
+
+neb_relax:
+  # Full MLFF-NEB optimization after the initial path is created.
+  # This differs from relax: relax optimizes images independently; neb_relax
+  # optimizes the band with springs and tangent projection.
+  enabled: false
+
+  calculator:
+    # Calculator type: dp / deepmd / mace / emt / lj.
+    type: mace
+
+    # DP/MACE model path or MACE foundation model name.
+    model: 'MACE/multihead_lora_replay_finetune.model'
+
+    # Multi-head model head name, if needed.
+    head: zeo_reico_head
+
+    # cuda or cpu for MACE.
+    device: cuda
+
+    # float32 can be faster and lighter; float64 can be more conservative.
+    dtype: float32
+
+    # Backend calculator kwargs.
+    kwargs: {}
+
+  # Force evaluation mode:
+  #   ase    safest; ASE calls the calculator image by image
+  #   auto   try batch evaluation for MACE/DeepMD, fall back to ase
+  #   batch  require batch evaluation or fail
+  force_evaluator: auto
+
+  # Number of images per batch for MLFF force evaluation.
+  # Empty/0 means all images at once; smaller values reduce GPU memory.
+  force_batch_size: 2
+
+  steps: 200
+  fmax: 0.5
+  maxstep: 0.05
+  optimizer: BFGS
+
+  # Use climbing image. Often false for first smoothing, true for TS refinement.
+  climb: true
+
+  # ASE NEB method.
+  method: improvedtangent
+
+  # Spring constant.
+  k: 0.1
+
+  # ASE parallel mode. Single-machine ordinary use usually keeps this false.
+  parallel: false
+
+  # Molecular systems may remove whole-band translation/rotation; slabs/zeolites
+  # usually keep this false.
+  remove_rotation_and_translation: false
+
+  # auto shares large MLFF calculators where appropriate.
+  shared_calculator: auto
+
+  # false: optimize the reaction center during NEB.
+  # true: keep active/torsion atoms fixed.
+  freeze_active: false
+
+  logfile: neb_relax.log
+  trajectory: neb_relax.traj
+  log_to_screen: true
+
+  # CP2K .ener-style energy log written under output.directory.
+  # MLFF energies are usually eV, not Hartree.
+  energy_log: neb_relax.ener
+
+  # Per-image optimization trajectories.
+  write_image_trajectories: true
+  image_trajectory_suffix: _neb_traj.xyz
+  image_trajectory_format: xyz
+
+  # Live outputs during NEB optimization. Useful for long jobs: you can inspect
+  # current image_*.xyz and band.txt while the run continues.
+  write_current_outputs: true
+  current_output_interval: 1
+
+dimer_vector:
+  # Optionally export a CP2K &DIMER_VECTOR from the final NEB path.
+  enabled: true
+
+  # Output file under output.directory.
+  file: dimer_vector.inc
+
+  # Direction source image:
+  #   auto       highest internal image from neb_relax.energy_log, otherwise middle
+  #   middle     middle internal image
+  #   max_energy require energy_log and choose highest internal image
+  #   integer    explicit 0-based image index; endpoints are not allowed
+  image: auto
+
+  # Atom components retained in DIMER_VECTOR:
+  #   active   active_atoms if non-empty, otherwise all atoms
+  #   all      all atoms
+  #   list     explicit atom list
+  atoms: active
+
+  # Zero frozen atom components even if selected.
+  zero_frozen_atoms: true
+
+  # Normalize the vector; CP2K DIMER mainly needs direction.
+  normalize: true
+
+  # Scale after normalization.
+  scale: 1.0
+
+pbc:
+  # Internal wrapping policy:
+  #   never   preserve path continuity
+  #   always  wrap aggressively, which may visually split crossing fragments
+  wrap_policy: never
+
+  # Wrap coordinates into the main cell before writing CP2K-facing outputs.
+  output_wrap: false
+
+  # Fail if output coordinates remain outside the cell.
+  fail_if_outside: false
+
+  # Fractional-coordinate wrap epsilon and outside-box tolerance.
+  eps: 1.0e-12
+  tol: 1.0e-8
+
+output:
+  # Output directory. Avoid using the working directory directly if old image_*.xyz
+  # or band.txt files are present.
+  directory: v2_output
+
+  # Single-image file prefix: image_000.xyz, image_001.xyz, ...
+  images_prefix: image
+
+  # Multi-frame xyz trajectory. Empty disables it.
+  trajectory: neb_initial_path.xyz
+
+  # CP2K &BAND / &REPLICA snippet. Empty disables it.
+  cp2k_band: band.txt
+
+  # Path/PBC diagnostics CSV. Empty disables it.
+  diagnostics: diagnostics.csv
+
+  # Also write VASP POSCAR folders 00/POSCAR, 01/POSCAR, ...
+  write_vasp: false
+
+  # Keep the unrelaxed initial guess when relax or neb_relax is enabled.
+  save_initial_guess: true
+
+  # Subdirectory for the pre-relaxation initial guess.
+  initial_guess_directory: initial_guess
+
+# A typical real-use sketch:
+#
+# active_atoms: [10, 12, 13, 48, 49]
+# frozen_atoms: [0, 1, 2, 3, 4]
+# torsions:
+#   - name: rotate_oh
+#     dihedral: [10, 12, 13, 48]
+#     rotating_group: [48, 49]
+#     start_deg: 30.0
+#     end_deg: 170.0
+# relax:
+#   enabled: true
+#   calculator:
+#     type: mace
+#     model: path/to/mace.model
+#     device: cuda
+#     dtype: float64
+#     kwargs: {}
+#   steps: 100
+#   fmax: 0.2
+#   maxstep: 0.05
+#   optimizer: BFGS
+#   relax_endpoints: false
+#   freeze_active: true

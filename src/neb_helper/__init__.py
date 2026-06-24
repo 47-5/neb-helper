@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .api import (
+    AnalyzeConfig,
     BarrierSummary,
     DimerGuessConfig,
     DimerGuessFile,
@@ -13,11 +14,14 @@ from .api import (
     TsGuessCandidate,
     TsGuessResult,
     TsGuessSpec,
+    analyze_config_from_mapping,
     analyze_neb,
     analyze_neb_files,
+    analyze_neb_from_config,
     generate_dimer_guess,
     generate_dimer_guess_from_config,
     generate_ts_guess,
+    load_analyze_config,
     load_config,
     load_dimer_guess_config,
     load_ts_guess_config,
@@ -31,6 +35,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     "__version__",
+    "AnalyzeConfig",
     "BarrierSummary",
     "DimerGuessConfig",
     "DimerGuessFile",
@@ -41,11 +46,14 @@ __all__ = [
     "TsGuessCandidate",
     "TsGuessResult",
     "TsGuessSpec",
+    "analyze_config_from_mapping",
     "analyze_neb",
     "analyze_neb_files",
+    "analyze_neb_from_config",
     "generate_dimer_guess",
     "generate_dimer_guess_from_config",
     "generate_ts_guess",
+    "load_analyze_config",
     "load_config",
     "load_dimer_guess_config",
     "load_ts_guess_config",

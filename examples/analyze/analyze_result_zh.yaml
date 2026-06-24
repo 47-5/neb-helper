@@ -1,0 +1,82 @@
+# neb-helper analyze 教学配置
+#
+# 这是一份字段说明型示例，不是自包含可直接运行的算例。
+# 运行前请把 input.path 或显式文件路径替换成你自己的 NEB 结果。
+#
+# 运行方式：
+#   neb-helper analyze examples\analyze\analyze_result_zh.yaml
+#
+# 这个 workflow 做什么：
+#   1. 读取已有 NEB 结果目录、CP2K .ener/.restart，或 ASE .traj。
+#   2. 画能量曲线。
+#   3. 写 result.txt，包含正/反向能垒、反应能、最高点 image 和每张 image 的表格。
+#   4. 如果有结构来源，可选导出多帧 xyz。
+#
+# 路径规则：
+#   - 普通相对路径相对于本 YAML 文件所在目录解析。
+#   - xyz_glob 相对于结果目录解析，通常是 input.path 目录或 energy_file 所在目录。
+
+input:
+  # 结果目录，或者直接给 .ener/.restart/.traj 文件。
+  # 目录自动发现优先级：
+  #   1. CP2K .ener
+  #   2. CP2K .restart
+  #   3. ASE .traj
+  path: ./neb_result
+
+  # 显式文件写法。如果不想依赖目录自动发现，可以取消注释。
+  # energy_file: ./neb_result/neb-r-0-1.ener
+  # restart_file: ./neb_result/neb.restart
+  # traj_file: ./neb_result/neb_relax.traj
+
+  # CP2K .ener 只有能量时，可以用 replica xyz 补充结构。
+  # 这个 pattern 相对于结果目录，不是相对于 YAML 目录。
+  # xyz_glob: "*Replica*.xyz"
+
+  # .ener 无法自动推断 image 数量时手动指定。
+  # image_count: 7
+
+  # 读取 .ener 的第几条数值行；-1 表示最后一条。
+  line_index: -1
+
+  # replica xyz 是多帧时读取哪一帧；"-1" 表示最后一帧。
+  xyz_index: "-1"
+
+  # 输入能量单位。CP2K .ener 通常是 hartree；MLFF/ASE 日志常见 ev。
+  energy_unit: hartree
+
+  # true：把 image 0 平移到 0 eV；false：保留绝对能量。
+  relative: true
+
+  # 从结构计算 path 距离时是否使用最小镜像。
+  mic: true
+
+  # ASE .traj 专用选项。一个 traj 保存多条 band 时建议显式写。
+  # images_per_band: 7
+  # band_index: -1
+
+plot:
+  # 是否平滑能量曲线；原始 image 点仍然会画出来。
+  smooth: true
+
+  # 图片分辨率。
+  dpi: 600
+
+  # Matplotlib 字体。
+  font: Times New Roman
+
+output:
+  # 能量曲线图片。
+  image: ./neb_result/neb_result.png
+
+  # 能垒和每张 image 数据的文字 summary。
+  summary: ./neb_result/result.txt
+
+  # false 表示只画图，不写 result.txt。
+  write_summary: true
+
+  # 有结构来源时导出多帧 xyz；需要 restart_file、traj_file 或 replica xyz。
+  write_xyz: false
+
+  # 结构轨迹输出路径。相对路径会按 analyze 的输出规则解析。
+  xyz: neb_traj.xyz

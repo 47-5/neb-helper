@@ -10,6 +10,7 @@ The package has two intended layers:
 ## Documentation
 
 - [中文快速教程](docs/quickstart_zh.md)
+- [analyze YAML 教程](docs/analyze_zh.md)
 - [中文完整功能手册](docs/user_guide_zh.md)
 - [TS/DIMER 初猜工作流](docs/tsguess_zh.md)
 
@@ -99,6 +100,31 @@ The analyzer can also read explicit CP2K `.ener` / `.restart` files or ASE `.tra
 neb-helper analyze --energy-file D:\calc\neb-r-0-1.ener --restart-file D:\calc\neb.restart
 neb-helper analyze --traj-file D:\calc\neb_relax.traj --images-per-band 7
 ```
+
+The same operation can be configured with YAML to keep repeated analysis runs reproducible:
+
+```powershell
+neb-helper analyze examples\analyze\analyze_result.yaml
+```
+
+Minimal config:
+
+```yaml
+input:
+  path: D:\code\nebresult\example1
+
+output:
+  image: D:\tmp\neb_result.png
+  summary: D:\tmp\result.txt
+
+plot:
+  smooth: true
+  dpi: 600
+```
+
+Relative paths in the config are resolved from the YAML file directory. `xyz_glob` is resolved relative to the result directory.
+
+See [analyze YAML 教程](docs/analyze_zh.md) for CP2K `.ener`, `.restart`, ASE `.traj`, and repeated-output examples.
 
 ## Generate a DIMER Guess
 

@@ -929,6 +929,110 @@ neb-helper analyze --traj-file D:\calc\neb_relax.traj --images-per-band 7
 --xyz-output PATH          配合 --write-xyz 指定结构输出路径
 ```
 
+### YAML 配置文件
+
+命令行参数较多时，推荐把 `analyze` 写成 YAML。这样同一个结果目录可以重复分析，也方便记录你当时使用的能量单位、输出路径和绘图设置。
+
+运行：
+
+```powershell
+neb-helper analyze analyze_result.yaml
+```
+
+也可以显式指定：
+
+```powershell
+neb-helper analyze --config analyze_result.yaml
+```
+
+最小配置：
+
+```yaml
+input:
+  path: D:\code\nebresult\example1
+```
+
+更常用的配置是显式写输出位置，避免覆盖原计算目录：
+
+```yaml
+input:
+  path: D:\code\nebresult\example1
+  energy_unit: hartree
+  relative: true
+
+output:
+  image: D:\tmp\example1_neb_result.png
+  summary: D:\tmp\example1_result.txt
+  write_xyz: false
+
+plot:
+  smooth: true
+  dpi: 600
+  font: Times New Roman
+```
+
+如果要显式读取 CP2K `.ener` 和 `.restart`：
+
+```yaml
+input:
+  energy_file: D:\calc\neb-r-0-1.ener
+  restart_file: D:\calc\neb.restart
+  image_count: 7
+  line_index: -1
+  energy_unit: hartree
+  relative: true
+
+output:
+  image: D:\tmp\neb_result.png
+  summary: D:\tmp\result.txt
+  write_xyz: true
+  xyz: D:\tmp\neb_traj.xyz
+```
+
+如果输入是 ASE `.traj`：
+
+```yaml
+input:
+  traj_file: D:\calc\neb_relax.traj
+  images_per_band: 7
+  band_index: -1
+  relative: true
+  mic: true
+
+output:
+  image: D:\tmp\traj_neb_result.png
+  summary: D:\tmp\traj_result.txt
+```
+
+常用字段：
+
+```text
+input.path              结果目录、.ener、.restart 或 .traj
+input.energy_file       显式 CP2K .ener
+input.restart_file      显式 CP2K .restart
+input.traj_file         显式 ASE .traj
+input.xyz_glob          replica xyz glob；相对于结果目录解析
+input.image_count       .ener 无法自动推断 image 数时手动指定
+input.line_index        读取 .ener 第几条 numeric line
+input.energy_unit       hartree 或 ev
+input.relative          是否平移到 image 0
+input.images_per_band   .traj 每条 band 的 image 数
+input.band_index        .traj 读取第几条 band
+input.mic               从结构计算 path 时是否使用 MIC
+plot.smooth             是否平滑曲线
+plot.dpi                图片 DPI
+plot.font               Matplotlib 字体
+output.image            图片输出路径
+output.summary          result.txt 输出路径
+output.write_summary    是否写 result.txt
+output.write_xyz        是否写结构轨迹
+output.xyz              结构轨迹输出路径
+```
+
+YAML 中的普通路径相对于配置文件所在目录解析。`xyz_glob` 是例外：它相对于结果目录解析，例如 `energy_file: D:\calc\neb-r-0-1.ener` 搭配 `xyz_glob: "*Replica*.xyz"` 会匹配 `D:\calc\*Replica*.xyz`。
+
+更完整的教程和常见问题见 [analyze YAML 教程](analyze_zh.md)。
+
 ### 避免覆盖原结果
 
 默认输出会写在输入旁边。如果你只是试跑，可以显式指定临时输出：

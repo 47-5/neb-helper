@@ -1,0 +1,127 @@
+# neb-helper tsguess 教学配置
+#
+# 这个 workflow 从 IS/FS 端点直接生成 TS/DIMER 初猜。
+# 适合直接笛卡尔插值会产生坏键，或强金属/酸位点锚定导致 DIMER 容易回到初态的体系。
+#
+# 运行方式：
+#   neb-helper tsguess examples\tsguess\sc_dmf_c2h4_zh.yaml
+#
+# 本目录里的 Sc/DMF/C2H4 文件只是模板案例。
+# 用到你自己的体系时，请替换 initial/final、active_atoms、反应坐标、
+# candidate fractions 和选择阈值。
+#
+# 注意：这是 TS 初猜生成器，不是 TS 优化器。运行 CP2K 前一定要检查
+# 推荐结构、dimer_vector.inc 和方向检查 xyz。
+
+workflow: tsguess
+
+# IS/FS 端点结构。必须有相同原子数、元素顺序、cell 和 PBC。
+# 程序默认认为两个端点的原子是一一对应的。
+initial: Sc_DMF_C2H4_IS-1.cif
+final: Sc_DMF_C2H4_FS-1.cif
+
+# 原子编号规则。
+# true：按 GaussView/VESTA 等可视化软件的 1-based 编号解释；
+# false：按 Python/ASE 的 0-based 编号解释。
+atom_indices_1_based: true
+
+# 局部反应区域。默认只有这些原子沿 IS->FS 移动，非活性原子来自 path.base。
+active_atoms: "577-598"
+
+path:
+  # active_idpp：只移动 active_atoms，并用轻量 IDPP-like 目标清理内部距离。
+  # active_linear：更简单的线性插值备选。
+  method: active_idpp
+
+  # 非活性原子来自哪个端点：initial 或 final。
+  base: initial
+
+  # 从 IS 到 FS 的候选反应进度。Diels-Alder 类 TS 初猜常偏产物侧，
+  # 但具体区间要按你的体系调整。
+  fractions: [0.70, 0.75, 0.78, 0.80]
+
+  idpp:
+    # active-region 距离清理的优化步数。
+    steps: 200
+
+    # 每步最大坐标更新。
+    max_step: 0.03
+
+    # 对线性插值位置的 tether 权重；越大越接近原始线性路径。
+    tether_weight: 0.02
+
+reaction_coordinates:
+  # 预期形成的键。距离会写入 metrics.csv。
+  forming_bonds:
+    - [578, 594]
+    - [581, 593]
+
+  # 预期削弱或断开的键/锚定相互作用。
+  weakening_bonds:
+    - [577, 582]
+
+  # 只监控、不作为强评分项的距离。
+  monitor_bonds:
+    - [593, 594]
+
+selection:
+  # 当几何评分接近时，对某个 fraction 的弱偏好。
+  prefer_fraction: 0.75
+
+  # forming bond 的期望距离范围，单位 Angstrom。
+  forming_range: [2.10, 2.45]
+
+  # weakening bond 的最小期望距离。
+  weakening_min: 3.0
+
+  # active region 内部的碰撞保护阈值。
+  min_pair_distance: 0.65
+
+candidate_outputs:
+  # 候选结构、metrics、notes 和 DIMER 文件的输出目录。
+  directory: tsguess_outputs
+
+  # 候选结构的 ASE 写出格式。
+  format: cif
+
+  # true：写出所有候选；false：只写推荐候选。
+  write_all: true
+
+  # 推荐结构文件名。{tag} 会变成 t0p750 等。
+  recommended_name: "ts_guess_recommended_{tag}.cif"
+
+  # 候选表，包含距离、评分和推荐标记。
+  metrics: metrics.csv
+
+  # 人类可读摘要。
+  notes: notes.md
+
+dimer_vector:
+  # 是否写 CP2K &DIMER_VECTOR。
+  enabled: true
+
+  # local_tangent 使用 candidate(tangent_fractions[1]) - candidate(tangent_fractions[0])。
+  source: local_tangent
+  tangent_fractions: [0.70, 0.78]
+
+  # DIMER_VECTOR 保留哪些原子的方向分量。
+  atoms: active
+
+  # 去掉 active region 的整体平移。
+  remove_translation: active
+
+  # 是否归一化以及归一化后缩放。
+  normalize: true
+  scale: 1.0
+
+  # CP2K include 片段输出文件。
+  file: dimer_vector.inc
+
+check:
+  # 写三帧 xyz：center - vector、center、center + vector。
+  # 信任 DIMER 方向前应该先可视化检查这个文件。
+  enabled: true
+
+  # 方向检查时的位移幅度，单位 Angstrom。
+  amplitude: 1.0
+  file: dimer_direction_check_minus_center_plus.xyz

@@ -1,6 +1,12 @@
 # make examples
 
-`nebmake_v2_example.yaml` is a full reference configuration migrated from the old `nebmake` repository.
+Teaching configs:
+
+```text
+nebmake_v2_example.yaml     Chinese teaching config kept for existing docs and commands.
+nebmake_v2_example_zh.yaml  Chinese teaching config.
+nebmake_v2_example_en.yaml  English teaching config.
+```
 
 It is meant as a field-by-field example, not as a self-contained runnable case. Before running it, replace at least:
 

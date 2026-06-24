@@ -1,0 +1,90 @@
+# neb-helper analyze teaching config
+#
+# This is a field-by-field example, not a self-contained runnable calculation.
+# Replace input.path or the explicit file paths before running it.
+#
+# Run:
+#   neb-helper analyze examples/analyze/analyze_result.yaml
+#
+# What this workflow does:
+#   1. Read an existing NEB result directory, CP2K .ener/.restart pair, or ASE .traj.
+#   2. Plot the energy profile.
+#   3. Write result.txt with forward/reverse barrier, reaction energy, peak image,
+#      and per-image path/energy values.
+#   4. Optionally export the analyzed structures as a multi-frame xyz.
+#
+# Path rules:
+#   - Ordinary relative paths are resolved from this YAML file directory.
+#   - xyz_glob is resolved relative to the result directory, usually the
+#     input.path directory or the energy_file parent directory.
+
+input:
+  # Result directory or a direct .ener/.restart/.traj file.
+  # Directory auto-discovery priority:
+  #   1. CP2K .ener
+  #   2. CP2K .restart
+  #   3. ASE .traj
+  path: ./neb_result
+
+  # Explicit file alternatives. Uncomment when you do not want auto-discovery.
+  # energy_file: ./neb_result/neb-r-0-1.ener
+  # restart_file: ./neb_result/neb.restart
+  # traj_file: ./neb_result/neb_relax.traj
+
+  # Optional replica xyz files used to supplement structures for a CP2K .ener.
+  # This pattern is relative to the result directory, not to the YAML directory.
+  # xyz_glob: "*Replica*.xyz"
+
+  # Number of images in the band when it cannot be inferred from .ener.
+  # image_count: 7
+
+  # Which numeric .ener line to read. -1 means the last line.
+  line_index: -1
+
+  # ASE frame index for replica xyz files. "-1" means the last frame.
+  xyz_index: "-1"
+
+  # Energy unit in the input file.
+  # CP2K .ener normally uses hartree; MLFF/ASE logs often use ev.
+  energy_unit: hartree
+
+  # true: shift the profile so image 0 is 0 eV.
+  # false: keep absolute input energies.
+  relative: true
+
+  # Use minimum-image convention when path distances are computed from structures.
+  mic: true
+
+  # ASE .traj options. Use these when input.traj_file points to a trajectory that
+  # stores one or more full NEB bands.
+  # images_per_band: 7
+  # band_index: -1
+
+plot:
+  # Smooth the plotted curve when possible. The original image points are still shown.
+  smooth: true
+
+  # Figure resolution.
+  dpi: 600
+
+  # Matplotlib font family.
+  font: Times New Roman
+
+output:
+  # Energy profile image.
+  image: ./neb_result/neb_result.png
+
+  # Text summary with barriers, reaction energy, peak image, and table.
+  summary: ./neb_result/result.txt
+
+  # Set false if you only want the figure.
+  write_summary: true
+
+  # Export structures to a multi-frame xyz when structures are available.
+  # Requires restart_file, traj_file, or replica xyz structures.
+  write_xyz: false
+
+  # Structure trajectory output path. If relative and output.image is set,
+  # command-line behavior writes it next to output.image; config absolute paths
+  # are also supported.
+  xyz: neb_traj.xyz

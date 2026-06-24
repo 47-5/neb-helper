@@ -1,0 +1,55 @@
+# neb-helper dimer 教学配置
+#
+# 这个 workflow 从已有 NEB 的一对 image 生成 TS/DIMER 初始结构，
+# 并写出 CP2K 可用的 &DIMER_VECTOR 片段。
+#
+# 运行方式：
+#   neb-helper dimer examples\dimer\dimer_guess_zh.yaml
+#
+# 等价命令大致是：
+#   neb-helper dimer --source ./neb_path --between 1 2 --fraction 0.5 `
+#     --active-atoms "577-598" --atoms active --atom-indices-1-based
+#
+# 输出的 dimer_vector.inc 不是完整 CP2K 输入文件，需要复制到：
+#   &MOTION / &GEO_OPT / &TRANSITION_STATE / &DIMER
+
+# 存放 image_000.xyz、image_001.xyz 等文件的目录。
+source: ./neb_path
+
+# 用哪一对 image 定义方向。这里是 image 编号，不是原子编号。
+# prefix=image 且 suffix=.xyz 时，[1, 2] 读取 image_001.xyz 和 image_002.xyz。
+between: [1, 2]
+
+# 从左侧 image 到右侧 image 的插值比例，用来生成 TS guess 结构。
+# 如果想一次生成多个初猜，可以写 fractions: [0.25, 0.50, 0.75]。
+fraction: 0.5
+
+# 原子选择编号规则。
+# true：按 GaussView 等可视化软件的 1-based 编号解释；
+# false：按 Python/ASE 的 0-based 编号解释。
+atom_indices_1_based: true
+
+# 反应中心原子。atoms: active 时只保留这些原子的 DIMER_VECTOR 分量。
+active_atoms: "577-598"
+
+# DIMER_VECTOR 保留哪些原子的方向分量：
+#   active   只保留 active_atoms
+#   all      保留所有原子
+#   "10,12" 或 [10, 12]  显式指定原子
+atoms: active
+
+# 输入 image 文件命名模式：{prefix}_{index:03d}{suffix}
+prefix: image
+suffix: .xyz
+
+# 输出目录，默认会写 ts_guess.xyz 和 dimer_vector.inc。
+output_dir: ./dimer_guess_001_002
+
+# TS guess 结构的 ASE 写出格式。
+format: xyz
+
+# 是否在原子选择后归一化方向向量。CP2K DIMER 通常更关心方向。
+normalize: true
+
+# 归一化后再乘的比例。
+scale: 1.0

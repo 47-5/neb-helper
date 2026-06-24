@@ -180,6 +180,39 @@ neb-helper analyze --energy-file D:\calc\neb-r-0-1.ener --restart-file D:\calc\n
 neb-helper analyze --traj-file D:\calc\neb_relax.traj --images-per-band 7
 ```
 
+如果同一个结果目录要反复分析，推荐写成 YAML：
+
+```powershell
+neb-helper analyze analyze_result.yaml
+```
+
+示例：
+
+```yaml
+input:
+  path: D:\code\nebresult\example1
+  # energy_file: neb-r-0-1.ener
+  # restart_file: neb.restart
+  # traj_file: neb_relax.traj
+  # xyz_glob: "*Replica*.xyz"
+  energy_unit: hartree
+  relative: true
+
+output:
+  image: D:\tmp\neb_result.png
+  summary: D:\tmp\result.txt
+  write_xyz: false
+
+plot:
+  smooth: true
+  dpi: 600
+  font: Times New Roman
+```
+
+YAML 里的普通路径相对于配置文件所在目录解析；`xyz_glob` 相对于结果目录解析。
+
+更完整的 CP2K `.ener`、`.restart`、ASE `.traj` 和常见问题说明见 [analyze YAML 教程](analyze_zh.md)。
+
 如果只想写到临时目录，避免覆盖原结果：
 
 ```powershell
