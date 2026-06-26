@@ -101,6 +101,34 @@ def test_dimer_guess_accepts_yaml_config_with_relative_paths(tmp_path: Path) -> 
     assert result.files[0].vector_path.exists()
 
 
+def test_dimer_guess_yaml_accepts_null_prefix(tmp_path: Path) -> None:
+    initial_path, final_path = _write_endpoint_pair(tmp_path)
+    (tmp_path / "TS9-pos-Replica_nr_1-1.xyz").write_text(initial_path.read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "TS9-pos-Replica_nr_2-1.xyz").write_text(final_path.read_text(encoding="utf-8"), encoding="utf-8")
+    config_path = tmp_path / "dimer.yaml"
+    _write_yaml(
+        config_path,
+        {
+            "source": ".",
+            "between": [0, 1],
+            "fraction": 0.5,
+            "prefix": None,
+            "suffix": ".xyz",
+            "atom_indices_1_based": True,
+            "active_atoms": "2-3",
+            "atoms": "active",
+            "output_dir": "dimer_out",
+            "format": "xyz",
+        },
+    )
+
+    result = generate_dimer_guess_from_config(config_path)
+
+    assert result.output_dir == tmp_path / "dimer_out"
+    assert result.selected_indices == [1, 2]
+    assert result.files[0].structure_path.exists()
+
+
 def _write_endpoint_pair(tmp_path: Path) -> tuple[Path, Path]:
     initial = Atoms(
         "H3",

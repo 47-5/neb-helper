@@ -136,11 +136,12 @@ examples/python_api/
 
 ### 3.1 image 编号
 
-默认所有原子编号和 image 编号都是 0-based：
+默认 `make` 生成的 image 文件和 Python/ASE 原子编号是 0-based；`dimer` / `slice` 读取已有文件时，也使用匹配文件按文件名自然排序后的 0-based 位置：
 
 ```text
-image_000.xyz -> 第 0 张 image
-image_003.xyz -> 第 3 张 image，也就是第 4 张
+image_000.xyz -> 排序后第 0 个文件
+image_003.xyz -> 排序后第 3 个文件
+TS9-pos-Replica_nr_1-1.xyz -> 如果是第一个匹配文件，就是 image position 0
 atom index 0  -> 第 1 个原子
 ```
 
@@ -155,6 +156,8 @@ atom_indices_1_based: true
 ```powershell
 --atom-indices-1-based
 ```
+
+这个开关只影响 `active_atoms`、`frozen_atoms` 这类原子列表，不影响 `dimer --between` 或 `slice --range` 的 image 文件位置。
 
 ### 3.2 结构兼容性
 
@@ -1454,6 +1457,8 @@ active_atoms: "577-598"
 atoms: active
 ```
 
+`between` 使用的是匹配文件按文件名自然排序后的 0-based 位置。对于 `image_000.xyz` / `image_001.xyz`，写 `[0, 1]`；对于 CP2K `Replica_nr_1-1.xyz` / `Replica_nr_2-1.xyz`，如果它们是前两个匹配文件，也写 `[0, 1]`。命令运行时会打印实际使用的文件名。
+
 输出：
 
 ```text
@@ -1465,9 +1470,9 @@ D:\code\nebresult\dimer_guess_001_002\dimer_vector.inc
 
 ```text
 --source PATH              已有 NEB image 目录
---prefix image             输入 image 前缀
+--prefix image_            输入 image 文件名前缀，字面量匹配
 --suffix .xyz              输入 image 后缀
---between LEFT RIGHT       用 LEFT -> RIGHT 定义方向
+--between LEFT RIGHT       用排序后匹配文件列表里的 LEFT -> RIGHT 位置定义方向
 --fraction X               插值比例，可重复
 --output-dir PATH          输出目录
 --structure-name NAME      单 fraction 时的结构文件名
@@ -1486,7 +1491,7 @@ YAML 字段和命令行选项基本一一对应：
 
 ```text
 source              已有 NEB image 目录
-between             [LEFT, RIGHT]，0-based image index
+between             [LEFT, RIGHT]，排序后匹配文件列表里的 0-based 位置
 fraction/fractions  单个或多个插值比例
 prefix/suffix       输入 image 文件命名
 output_dir          输出目录
@@ -1570,9 +1575,9 @@ slice_000_003\source_map.csv
 
 ```text
 --source PATH              已有 NEB image 目录
---prefix image             输入 image 前缀
+--prefix image_            输入 image 文件名前缀，字面量匹配
 --suffix .xyz              输入 image 后缀
---range START END          inclusive image 范围，可反向
+--range START END          使用排序后匹配文件列表里的 0-based 位置，inclusive，可反向
 --output-dir PATH          输出目录
 --output-prefix image      输出 image 前缀
 --format xyz               ASE 写出格式

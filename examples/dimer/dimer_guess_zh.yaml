@@ -16,8 +16,12 @@
 # 存放 image_000.xyz、image_001.xyz 等文件的目录。
 source: ./neb_path
 
-# 用哪一对 image 定义方向。这里是 image 编号，不是原子编号。
-# prefix=image 且 suffix=.xyz 时，[1, 2] 读取 image_001.xyz 和 image_002.xyz。
+# 用哪一对 image 定义方向。这里是匹配到的 image 文件按文件名自然排序后
+# 的 0-based 位置，不是原子编号。
+# prefix=image_ 且 suffix=.xyz 时，如果 image_000.xyz 存在，[1, 2] 通常读取
+# image_001.xyz 和 image_002.xyz。
+# CP2K 文件名如 TS9-pos-Replica_nr_1-1.xyz / TS9-pos-Replica_nr_2-1.xyz 时，
+# 如果它们是排序后的前两个匹配文件，用 [0, 1]。CLI 会打印实际使用的文件。
 between: [1, 2]
 
 # 从左侧 image 到右侧 image 的插值比例，用来生成 TS guess 结构。
@@ -38,9 +42,13 @@ active_atoms: "577-598"
 #   "10,12" 或 [10, 12]  显式指定原子
 atoms: active
 
-# 输入 image 文件命名模式：{prefix}_{index:03d}{suffix}
-prefix: image
+# 输入 image 文件命名模式：{prefix}{index:03d}{suffix}；需要下划线时写进 prefix。
+prefix: image_
 suffix: .xyz
+
+# 更灵活的匹配：
+#   prefix: null   匹配任意前缀，例如 TS9-pos-Replica_nr_1-1.xyz
+#   suffix: null   匹配 image 编号后的任意后缀
 
 # 输出目录，默认会写 ts_guess.xyz 和 dimer_vector.inc。
 output_dir: ./dimer_guess_001_002

@@ -18,7 +18,7 @@
 从已有路径派生下一步：neb-helper dimer / slice
 ```
 
-所有 image 编号默认都是 Python/ASE 风格的 0-based index。`image_003` 就是第 4 张 image。
+所有 image 选择默认都是 Python/ASE 风格的 0-based。对 `dimer` / `slice` 来说，这是匹配文件按文件名自然排序后的第 0 个、第 1 个、第 2 个。
 
 ## 2. 安装
 
@@ -364,6 +364,8 @@ result = generate_ts_guess(spec)
 neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5
 ```
 
+`between` 使用的是匹配到的 image 文件按文件名自然排序后的 0-based 位置，不是原子编号。命令运行时会打印实际使用的文件名。`image_000.xyz` / `image_001.xyz` 要写 `between: [0, 1]`；CP2K 的 `Replica_nr_1-1.xyz` / `Replica_nr_2-1.xyz` 如果是排序后的前两个匹配文件，也写 `between: [0, 1]`。
+
 如果命令行参数较多，也可以把同样的信息放进 YAML：
 
 ```powershell
@@ -389,6 +391,24 @@ D:\code\nebresult\image_000.xyz
 D:\code\nebresult\image_001.xyz
 D:\code\nebresult\image_002.xyz
 ...
+```
+
+如果你的文件名不是标准 `image_001.xyz`，可以显式设置 `prefix` / `suffix`：
+
+```yaml
+source: ./TS9_temp
+prefix: TS9-pos-Replica_nr_
+suffix: .xyz
+between: [0, 1]
+```
+
+这里 `[0, 1]` 对应排序后的第 0 个和第 1 个匹配文件，通常就是 `Replica_nr_1-1` 和 `Replica_nr_2-1`。
+
+如果只想按后缀匹配所有 xyz 文件，可以把前缀设为空：
+
+```yaml
+prefix: null
+suffix: .xyz
 ```
 
 默认写出：
@@ -433,7 +453,7 @@ neb-helper dimer --source D:\code\nebresult --between 1 2 --fraction 0.5 --activ
 
 ```text
 --source PATH              已有 NEB image 所在目录
---between LEFT RIGHT       用 LEFT -> RIGHT 两张 image 定义方向
+--between LEFT RIGHT       用排序后匹配文件列表里的 LEFT -> RIGHT 位置定义方向
 --fraction X               在 LEFT 和 RIGHT 之间插值，默认 0.5，可重复
 --atoms active|all|LIST    DIMER_VECTOR 保留哪些原子分量
 --active-atoms LIST        --atoms active 时使用的原子列表
@@ -572,15 +592,26 @@ image_002.xyz
 如果你的前缀或后缀不同，可以指定：
 
 ```powershell
-neb-helper slice --source D:\code\nebresult --prefix replica --suffix xyz --range 0 3
-neb-helper dimer --source D:\code\nebresult --prefix replica --suffix xyz --between 1 2
+neb-helper slice --source D:\code\nebresult --prefix replica_ --suffix xyz --range 0 3
+neb-helper dimer --source D:\code\nebresult --prefix replica_ --suffix xyz --between 1 2
 ```
+
+如果 CP2K 输出文件名不方便拆成固定前缀/后缀，也可以放宽匹配：
+
+```powershell
+neb-helper slice --source D:\code\nebresult --prefix null --suffix xyz --range 0 3
+neb-helper dimer --source D:\code\nebresult --prefix null --suffix xyz --between 0 1
+```
+
+`slice --range` 和 `dimer --between` 一样，使用排序后匹配文件列表里的 0-based 位置。
 
 ## 11. 常见问题
 
 ### 找不到 image 文件
 
 确认目录里是否真的是 `image_000.xyz` 这种命名。必要时用 `--prefix` 和 `--suffix`。
+如果只想按后缀匹配，例如所有 `.xyz`，可以用 `--prefix null --suffix xyz`；
+YAML 里写 `prefix: null` / `suffix: .xyz`。
 
 ### 原子数、元素顺序或 PBC 不一致
 

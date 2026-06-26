@@ -12,7 +12,7 @@ from ase.io import write
 from neb_helper.common.cp2k import write_band_file
 from neb_helper.common.geometry import assert_compatible_images, interpolate_mic, path_segment_lengths
 
-from .band_io import read_image_map, require_images
+from .band_io import read_image_records, require_image_records
 
 
 @dataclass(frozen=True)
@@ -29,6 +29,7 @@ class SliceImageRecord:
 class SliceBandResult:
     output_dir: Path
     source_indices: list[int]
+    source_files: list[Path]
     output_images: list[object]
     records: list[SliceImageRecord]
     band_path: Path | None
@@ -41,8 +42,8 @@ def slice_band(
     source: str | Path,
     start_index: int,
     end_index: int,
-    prefix: str = "image",
-    suffix: str = ".xyz",
+    prefix: str | None = "image_",
+    suffix: str | None = ".xyz",
     output_dir: str | Path | None = None,
     output_prefix: str = "image",
     output_format: str = "xyz",
@@ -52,11 +53,13 @@ def slice_band(
     source_map: str | None = "source_map.csv",
 ) -> SliceBandResult:
     source_indices = _inclusive_range(start_index, end_index)
-    image_map = read_image_map(source, prefix=prefix, suffix=suffix)
-    source_images = require_images(image_map, source_indices)
+    image_records = read_image_records(source, prefix=prefix, suffix=suffix)
+    source_records = require_image_records(image_records, source_indices)
+    source_images = [record.atoms for record in source_records]
+    source_files = [record.path for record in source_records]
     assert_compatible_images(
         source_images,
-        labels=[f"Image {index}" for index in source_indices],
+        labels=[f"Image {record.index} ({record.path.name})" for record in source_records],
     )
 
     output_dir = Path(output_dir) if output_dir else Path(source) / _default_output_dir(start_index, end_index)
@@ -99,6 +102,7 @@ def slice_band(
     return SliceBandResult(
         output_dir=output_dir,
         source_indices=source_indices,
+        source_files=source_files,
         output_images=output_images,
         records=records,
         band_path=band_path,
@@ -128,6 +132,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"Wrote {len(result.output_images)} sliced image(s) from "
         f"{result.source_indices[0]} -> {result.source_indices[-1]} to {result.output_dir}"
     )
+    print("Using source files:")
+    for source_index, source_file in zip(result.source_indices, result.source_files):
+        print(f"  {source_index}: {source_file}")
     if result.band_path:
         print(f"Wrote CP2K band file: {result.band_path}")
     if result.trajectory_path:
@@ -143,15 +150,15 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Crop and optionally resample a segment of an existing NEB image band.",
     )
     parser.add_argument("--source", default=".", help="Directory containing image_000.xyz-style files.")
-    parser.add_argument("--prefix", default="image", help="Input image filename prefix before the numeric index.")
-    parser.add_argument("--suffix", default=".xyz", help="Input image filename suffix, with or without the leading dot.")
+    parser.add_argument("--prefix", default="image_", help="Literal input image filename prefix before the numeric index. Use null/none/empty to match any prefix.")
+    parser.add_argument("--suffix", default=".xyz", help="Input image filename suffix, with or without the leading dot. Use null/none/empty to match any suffix.")
     parser.add_argument(
         "--range",
         nargs=2,
         type=int,
         metavar=("START", "END"),
         required=True,
-        help="Inclusive 0-based source image range. START may be greater than END to reverse the path.",
+        help="Inclusive 0-based range in the sorted matched image file list. START may be greater than END to reverse the path.",
     )
     parser.add_argument("--output-dir", help="Output directory. Default: SOURCE/slice_START_END.")
     parser.add_argument("--output-prefix", default="image", help="Output image prefix. Default: image.")

@@ -16,8 +16,12 @@
 # Directory containing image_000.xyz, image_001.xyz, ...
 source: ./neb_path
 
-# Image pair defining the direction. These are image indices, not atom indices.
-# With prefix=image and suffix=.xyz, [1, 2] reads image_001.xyz and image_002.xyz.
+# Image pair defining the direction. These are 0-based positions in the sorted
+# matched image file list, not atom indices.
+# With prefix=image_ and suffix=.xyz, [1, 2] usually reads image_001.xyz and
+# image_002.xyz when image_000.xyz exists.
+# With CP2K files such as TS9-pos-Replica_nr_1-1.xyz and TS9-pos-Replica_nr_2-1.xyz,
+# use [0, 1] if those are the first two matched files. The CLI prints the actual files used.
 between: [1, 2]
 
 # Interpolation fraction from left image to right image used for the TS guess.
@@ -38,9 +42,13 @@ active_atoms: "577-598"
 #   "10,12" or [10, 12]  keep an explicit selection
 atoms: active
 
-# Input image naming pattern: {prefix}_{index:03d}{suffix}
-prefix: image
+# Input image naming pattern: {prefix}{index:03d}{suffix}. Include "_" in prefix if needed.
+prefix: image_
 suffix: .xyz
+
+# Flexible matching:
+#   prefix: null   match any prefix, for example TS9-pos-Replica_nr_1-1.xyz
+#   suffix: null   match any suffix after the image index
 
 # Output directory for ts_guess.xyz and dimer_vector.inc.
 output_dir: ./dimer_guess_001_002

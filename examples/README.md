@@ -38,7 +38,7 @@ Indexing convention:
 ```text
 make      defaults to 0-based unless atom_indices_1_based: true
 analyze   image indices in result.txt are 0-based
-dimer     between: [LEFT, RIGHT] uses image indices; atom indices follow atom_indices_1_based
+dimer     between: [LEFT, RIGHT] uses 0-based positions in the sorted matched image file list; atom indices follow atom_indices_1_based
 tsguess   atom indices follow atom_indices_1_based
 ```
 
